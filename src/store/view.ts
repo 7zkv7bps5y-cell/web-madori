@@ -12,7 +12,9 @@ interface ViewState {
   height: number;
   /** 増えるたびに Canvas が全体表示を行う */
   fitSeq: number;
-  set: (v: Partial<Pick<ViewState, 'zoom' | 'panX' | 'panY' | 'width' | 'height'>>) => void;
+  /** 家具配置モード: すべての家具の寸法を表示 */
+  showDims: boolean;
+  set: (v: Partial<Pick<ViewState, 'zoom' | 'panX' | 'panY' | 'width' | 'height' | 'showDims'>>) => void;
   zoomAt: (factor: number, sx?: number, sy?: number) => void;
   requestFit: () => void;
 }
@@ -26,6 +28,7 @@ export const useView = create<ViewState>((set, get) => ({
   width: 800,
   height: 600,
   fitSeq: 0,
+  showDims: false,
   set: (v) => set(v),
   zoomAt: (factor, sx, sy) => {
     const { zoom, panX, panY, width, height } = get();

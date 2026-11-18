@@ -1,10 +1,12 @@
-import { createOpening, createProject, createRoom } from './project';
+import { createFurniture, createOpening, createProject, createRoom } from './project';
 import type { Opening, OpeningType, Project, Room, RoomType, Side } from './types';
 
 type RoomSpec = [key: string, type: RoomType, x: number, y: number, w: number, h: number, rotation?: Room['rotation']];
 type OpeningSpec = [roomKey: string, type: OpeningType, side: Side, offset: number, width: number, swing?: Opening['swing'], hinge?: Opening['hinge']];
 
-function build(name: string, roomSpecs: RoomSpec[], openingSpecs: OpeningSpec[]): Project {
+type FurnitureSpec = [type: string, x: number, y: number, rotation?: number];
+
+function build(name: string, roomSpecs: RoomSpec[], openingSpecs: OpeningSpec[], furnitureSpecs: FurnitureSpec[] = []): Project {
   const p = createProject(name);
   const floorId = p.settings.activeFloorId;
   const keys = new Map<string, Room>();
@@ -19,6 +21,9 @@ function build(name: string, roomSpecs: RoomSpec[], openingSpecs: OpeningSpec[])
     if (swing) o.swing = swing;
     if (hinge) o.hinge = hinge;
     p.openings.push(o);
+  }
+  for (const [type, x, y, rotation = 0] of furnitureSpecs) {
+    p.furniture.push({ ...createFurniture(type, { x, y }, floorId), rotation });
   }
   return p;
 }
@@ -66,6 +71,15 @@ export const TEMPLATES: TemplateDef[] = [
           ['bedroom', 'window', 'right', 1365, 910],
           ['bedroom', 'largeWindow', 'bottom', 990, 1650],
           ['bath', 'window', 'left', 455, 910],
+        ],
+        [
+          ['sofa', 3900, 500],
+          ['table', 3900, 1400],
+          ['tv-stand', 4600, 3390, 180],
+          ['dining-table', 1500, 1900],
+          ['fridge', 425, 2665, 90],
+          ['bed-double', 6370, 5575],
+          ['aircon', 6370, 4725],
         ],
       ),
   },

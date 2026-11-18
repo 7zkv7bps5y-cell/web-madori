@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { computeWalls } from '../model/geometry';
+import { createProject } from '../model/project';
 import { useStore } from './store';
 
 const s = () => useStore.getState();
@@ -7,7 +8,7 @@ const first = () => s().project.rooms[0];
 
 beforeEach(() => {
   useStore.setState({ past: [], future: [], selection: null });
-  s().loadProject(s().project.rooms.length ? { ...s().project, rooms: [], openings: [] } : s().project, false);
+  s().loadProject(createProject(), false);
   s().addRoomAt('room', { x: 0, y: 0, w: 2730, h: 3640 });
 });
 
@@ -113,5 +114,45 @@ describe('自動保存との連携', () => {
     s().endDrag();
     unsub();
     expect(seen.at(-1)).toEqual({ dragging: false, x: 910 });
+  });
+});
+
+describe('家具の操作', () => {
+  it('追加・サイズ変更・回転・複製・削除・Undo', () => {
+    s().addFurniture('sofa', { x: 1000, y: 1000 });
+    const f = s().project.furniture[0];
+    expect(f).toMatchObject({ type: 'sofa', w: 1800, d: 850, rotation: 0 });
+    expect(s().selection).toEqual({ kind: 'furniture', id: f.id });
+    s().updateFurniture(f.id, { w: 2100, d: 900 });
+    s().rotateFurniture(f.id, 90);
+    s().rotateFurniture(f.id, -180);
+    expect(s().project.furniture[0]).toMatchObject({ w: 2100, d: 900, rotation: 270 });
+    s().duplicateFurniture(f.id);
+    expect(s().project.furniture).toHaveLength(2);
+    s().deleteSelection();
+    expect(s().project.furniture).toHaveLength(1);
+    s().undo();
+    expect(s().project.furniture).toHaveLength(2);
+  });
+
+  it('部屋を削除しても家具は残る（間取りと家具は別データ）', () => {
+    s().addFurniture('bed-single', { x: 1000, y: 1000 });
+    s().deleteRoom(first().id);
+    expect(s().project.furniture).toHaveLength(1);
+  });
+
+  it('モード切り替えで選択が解除される', () => {
+    s().select({ kind: 'room', id: first().id });
+    s().setMode('furniture');
+    expect(s().selection).toBeNull();
+    s().setMode('plan');
+  });
+
+  it('案の追加・切り替えは Undo できる', () => {
+    s().addPlan(true);
+    expect(s().project.plans).toHaveLength(2);
+    expect(s().project.rooms).toHaveLength(1);
+    s().undo();
+    expect(s().project.plans).toHaveLength(1);
   });
 });

@@ -13,15 +13,38 @@ import {
   type ResizeHandle,
   type WallHit,
 } from '../model/geometry';
-import type { Project, Rect, RoomType, Side } from '../model/types';
+import { checkFurniture, furnitureCorners, wallFaces } from '../model/collision';
+import {
+  angleFromPointer,
+  FURNITURE_HANDLES,
+  handleWorld,
+  resizeFurniture,
+  snapFurnitureMove,
+  type FurnitureHandle,
+} from '../model/furnitureGeom';
+import type { Furniture, Project, Rect, RoomType, Side } from '../model/types';
 import { formatMm } from '../model/units';
 import { activeRooms, useStore } from '../store/store';
 import { clampZoom, useView } from '../store/view';
+import { FurnitureLayer } from './plan/FurnitureShape';
 import { PlanDrawing } from './plan/PlanDrawing';
 
 type Gesture =
   | { kind: 'pan'; sx: number; sy: number; panX: number; panY: number; moved: boolean }
-  | { kind: 'room'; id: string; sx: number; sy: number; orig: Rect; moved: boolean; began: boolean }
+  | {
+      kind: 'room';
+      id: string;
+      sx: number;
+      sy: number;
+      orig: Rect;
+      /** 部屋と一緒に動かす家具（部屋の中にある家具）の元の位置 */
+      carry: { id: string; x: number; y: number }[];
+      moved: boolean;
+      began: boolean;
+    }
+  | { kind: 'furniture'; id: string; sx: number; sy: number; orig: Furniture; moved: boolean; began: boolean }
+  | { kind: 'fresize'; id: string; handle: FurnitureHandle; orig: Furniture; began: boolean }
+  | { kind: 'frotate'; id: string; began: boolean }
   | { kind: 'resize'; id: string; handle: ResizeHandle; orig: Rect; began: boolean }
   | { kind: 'opening'; id: string; sx: number; sy: number; moved: boolean; began: boolean }
   | { kind: 'button'; baseId: string; dir: Side; sx: number; sy: number; moved: boolean }
@@ -30,6 +53,16 @@ type Gesture =
 
 const ACCENT = '#1f7a63';
 export const ROOM_DRAG_MIME = 'application/x-madori-room';
+export const FURNITURE_DRAG_MIME = 'application/x-madori-furniture';
+
+/** 画面中央に家具を置く（パレットからの追加用） */
+export function addFurnitureNearCenter(type: string) {
+  const { zoom, panX, panY, width, height } = useView.getState();
+  const grid = useStore.getState().project.settings.furnitureGrid;
+  const x = Math.round((width / 2 - panX) / zoom / grid) * grid;
+  const y = Math.round((height / 2 - panY) / zoom / grid) * grid;
+  useStore.getState().addFurniture(type, { x, y });
+}
 
 const HANDLES: ResizeHandle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
 const CURSORS: Record<ResizeHandle, string> = {
@@ -99,7 +132,9 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
   const project = useStore((s) => s.project);
   const selection = useStore((s) => s.selection);
   const tool = useStore((s) => s.tool);
-  const { zoom, panX, panY, width, height, fitSeq } = useView();
+  const mode = useStore((s) => s.mode);
+  const [hoverRoomId, setHoverRoomId] = useState<string | null>(null);
+  const { zoom, panX, panY, width, height, fitSeq, showDims } = useView();
   const setView = useView((s) => s.set);
   const gesture = useRef<Gesture | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -230,6 +265,30 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
       gesture.current = { kind: 'place', sx, sy, moved: false, panX: v.panX, panY: v.panY };
       return;
     }
+    if (st.mode === 'furniture') {
+      const sel = st.selection?.kind === 'furniture' ? st.project.furniture.find((f) => f.id === st.selection!.id) : undefined;
+      if (sel && target.closest('[data-frotate]')) {
+        gesture.current = { kind: 'frotate', id: sel.id, began: false };
+        return;
+      }
+      const fh = target.closest('[data-fhandle]');
+      if (sel && fh) {
+        gesture.current = { kind: 'fresize', id: sel.id, handle: fh.getAttribute('data-fhandle') as FurnitureHandle, orig: sel, began: false };
+        return;
+      }
+      const fe = target.closest('[data-furniture-id]');
+      if (fe) {
+        const id = fe.getAttribute('data-furniture-id')!;
+        const f = st.project.furniture.find((x) => x.id === id);
+        if (f) {
+          st.select({ kind: 'furniture', id });
+          gesture.current = { kind: 'furniture', id, sx, sy, orig: f, moved: false, began: false };
+          return;
+        }
+      }
+      gesture.current = { kind: 'pan', sx, sy, panX: v.panX, panY: v.panY, moved: false };
+      return;
+    }
     const addBtn = target.closest('[data-add-dir]');
     if (addBtn) {
       gesture.current = {
@@ -275,6 +334,9 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
           sx,
           sy,
           orig: { x: room.x, y: room.y, w: room.w, h: room.h },
+          carry: st.project.furniture
+            .filter((f) => f.floorId === room.floorId && f.x > room.x && f.x < room.x + room.w && f.y > room.y && f.y < room.y + room.h)
+            .map((f) => ({ id: f.id, x: f.x, y: f.y })),
           moved: false,
           began: false,
         };
@@ -291,6 +353,21 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
     const v = useView.getState();
 
     if (!g) {
+      if (e.pointerType === 'mouse' && st.mode === 'plan' && st.tool.kind === 'select') {
+        // PC: マウスを乗せた部屋にも＋ボタンを表示（＋ボタンへ移動する間は維持）
+        const t = e.target as Element;
+        const rid = t.closest('[data-room-id]')?.getAttribute('data-room-id');
+        if (rid) {
+          if (rid !== hoverRoomId) setHoverRoomId(rid);
+        } else if (hoverRoomId && !t.closest('[data-add-dir]')) {
+          const room = st.project.rooms.find((r) => r.id === hoverRoomId);
+          const p = toWorld(e.clientX, e.clientY);
+          const m = 70 / v.zoom + st.project.settings.exteriorWallThickness;
+          if (!room || p.x < room.x - m || p.x > room.x + room.w + m || p.y < room.y - m || p.y > room.y + room.h + m) {
+            setHoverRoomId(null);
+          }
+        }
+      }
       if (st.tool.kind === 'placeOpening') {
         const def = openingDef(st.tool.type);
         setGhost(nearestWall(toWorld(e.clientX, e.clientY), activeRooms(st.project), def.width, Math.max(300, 30 / v.zoom), 50));
@@ -340,7 +417,60 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
           st.project.settings.gridSize,
           12 / v.zoom,
         );
-        if (!overlapsAny(moved, others)) st.dragUpdate((p) => withRoomRect(p, g.id, moved));
+        if (!overlapsAny(moved, others)) {
+          const ddx = moved.x - g.orig.x;
+          const ddy = moved.y - g.orig.y;
+          const carry = new Map(g.carry.map((c) => [c.id, c]));
+          st.dragUpdate((p) => {
+            const next = withRoomRect(p, g.id, moved);
+            if (carry.size === 0) return next;
+            return {
+              ...next,
+              furniture: next.furniture.map((f) => {
+                const c = carry.get(f.id);
+                return c ? { ...f, x: c.x + ddx, y: c.y + ddy } : f;
+              }),
+            };
+          });
+        }
+        return;
+      }
+      case 'furniture': {
+        if (!g.moved && !far) return;
+        g.moved = true;
+        if (!g.began) {
+          st.beginDrag();
+          g.began = true;
+        }
+        const pos = snapFurnitureMove(
+          g.orig,
+          g.orig.x + dx / v.zoom,
+          g.orig.y + dy / v.zoom,
+          wallFaces(st.project, activeRooms(st.project)),
+          st.project.settings.furnitureGrid,
+          10 / v.zoom,
+        );
+        st.dragUpdate((p) => ({ ...p, furniture: p.furniture.map((f) => (f.id === g.id ? { ...f, ...pos } : f)) }));
+        return;
+      }
+      case 'fresize': {
+        if (!g.began) {
+          st.beginDrag();
+          g.began = true;
+        }
+        const r = resizeFurniture(g.orig, g.handle, toWorld(e.clientX, e.clientY), 10);
+        st.dragUpdate((p) => ({ ...p, furniture: p.furniture.map((f) => (f.id === g.id ? { ...f, ...r } : f)) }));
+        return;
+      }
+      case 'frotate': {
+        if (!g.began) {
+          st.beginDrag();
+          g.began = true;
+        }
+        const f = st.project.furniture.find((x) => x.id === g.id);
+        if (!f) return;
+        const rotation = angleFromPointer(f, toWorld(e.clientX, e.clientY), e.shiftKey ? 1 : 15);
+        st.dragUpdate((p) => ({ ...p, furniture: p.furniture.map((x) => (x.id === g.id ? { ...x, rotation } : x)) }));
         return;
       }
       case 'resize': {
@@ -413,12 +543,20 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
 
   // パレットからのドラッグ＆ドロップ（PC）
   const onDragOver = (e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes(ROOM_DRAG_MIME)) {
+    if (e.dataTransfer.types.includes(ROOM_DRAG_MIME) || e.dataTransfer.types.includes(FURNITURE_DRAG_MIME)) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
     }
   };
   const onDrop = (e: React.DragEvent) => {
+    const ftype = e.dataTransfer.getData(FURNITURE_DRAG_MIME);
+    if (ftype) {
+      e.preventDefault();
+      const p = toWorld(e.clientX, e.clientY);
+      const g = project.settings.furnitureGrid;
+      useStore.getState().addFurniture(ftype, { x: Math.round(p.x / g) * g, y: Math.round(p.y / g) * g });
+      return;
+    }
     const type = e.dataTransfer.getData(ROOM_DRAG_MIME) as RoomType;
     if (!type) return;
     e.preventDefault();
@@ -433,7 +571,12 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
   };
 
   // ---- 表示 ----
-  const selRoom = selection?.kind === 'room' ? rooms.find((r) => r.id === selection.id) : undefined;
+  const planMode = mode === 'plan';
+  const selRoom = planMode && selection?.kind === 'room' ? rooms.find((r) => r.id === selection.id) : undefined;
+  const selFurniture =
+    !planMode && selection?.kind === 'furniture' ? project.furniture.find((f) => f.id === selection.id) : undefined;
+  const plusRoom = planMode && tool.kind === 'select' ? selRoom ?? rooms.find((r) => r.id === hoverRoomId) : undefined;
+  const furniture = project.furniture.filter((f) => f.floorId === floorId);
   const selOpening = selection?.kind === 'opening' ? project.openings.find((o) => o.id === selection.id) : undefined;
   const selOpeningRoom = selOpening ? rooms.find((r) => r.id === selOpening.roomId) : undefined;
 
@@ -450,14 +593,14 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
   const btnGap = px(touchUi ? 34 : 28) + project.settings.exteriorWallThickness;
   const fontPx = px(12);
 
-  const addButtons = selRoom && tool.kind === 'select'
-    ? (['top', 'right', 'bottom', 'left'] as Side[]).filter((dir) => {
-        const d = roomDef('room');
-        return (
-          findAdjacentPlacement(selRoom, dir, Math.min(d.w, 910), Math.min(d.h, 910), rooms, grid) !== null
-        );
-      })
+  // ＋ボタン: 最小 910mm 角の部屋が置ける方向だけ表示
+  const addButtons = plusRoom
+    ? (['top', 'right', 'bottom', 'left'] as Side[]).filter(
+        (dir) => findAdjacentPlacement(plusRoom, dir, 910, 910, rooms, grid) !== null,
+      )
     : [];
+  const issues = useMemo(() => (planMode ? new Map() : checkFurniture(project)), [project, planMode]);
+  const warnIds = useMemo(() => new Set(issues.keys()), [issues]);
 
   const openingBand = (o: typeof selOpening, room: typeof selOpeningRoom, extra: number) => {
     if (!o || !room) return '';
@@ -494,10 +637,20 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
         {showMinor && <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill="url(#grid-minor)" />}
         <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill="url(#grid-major)" />
 
-        <PlanDrawing project={project} floorId={floorId} highlightOpeningId={selOpening?.id} />
+        <PlanDrawing
+          project={project}
+          floorId={floorId}
+          highlightOpeningId={selOpening?.id}
+          overlay={
+            // 家具（間取り作成モードでは薄く表示し、操作しない）
+            <g opacity={planMode ? 0.35 : 1} pointerEvents="none">
+              <FurnitureLayer items={furniture} warnIds={warnIds} />
+            </g>
+          }
+        />
 
         {/* 当たり判定レイヤー */}
-        <g className={tool.kind === 'placeOpening' ? 'no-hit' : ''}>
+        <g className={tool.kind === 'placeOpening' || !planMode ? 'no-hit' : ''}>
           {rooms.map((r) => (
             <rect
               key={r.id}
@@ -593,27 +746,112 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
                   />
                 );
               })}
-            {addButtons.map((dir) => {
-              const cx =
-                dir === 'left' ? selRoom.x - btnGap : dir === 'right' ? selRoom.x + selRoom.w + btnGap : selRoom.x + selRoom.w / 2;
-              const cy =
-                dir === 'top' ? selRoom.y - btnGap : dir === 'bottom' ? selRoom.y + selRoom.h + btnGap : selRoom.y + selRoom.h / 2;
-              return (
-                <g key={dir} data-add-dir={dir} data-base-id={selRoom.id} className="add-btn" role="button" aria-label={`${dir}に部屋を追加`}>
-                  <circle cx={cx} cy={cy} r={btnR * 1.5} fill="transparent" />
-                  <circle cx={cx} cy={cy} r={btnR} fill={ACCENT} stroke="#fff" strokeWidth={2} vectorEffect="non-scaling-stroke" />
-                  <path
-                    d={`M ${cx - btnR * 0.5} ${cy} H ${cx + btnR * 0.5} M ${cx} ${cy - btnR * 0.5} V ${cy + btnR * 0.5}`}
-                    stroke="#fff"
-                    strokeWidth={2.5}
-                    strokeLinecap="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                </g>
-              );
-            })}
           </g>
         )}
+
+        {/* 隣に部屋を追加する＋ボタン */}
+        {plusRoom && addButtons.map((dir) => {
+          const cx =
+            dir === 'left' ? plusRoom.x - btnGap : dir === 'right' ? plusRoom.x + plusRoom.w + btnGap : plusRoom.x + plusRoom.w / 2;
+          const cy =
+            dir === 'top' ? plusRoom.y - btnGap : dir === 'bottom' ? plusRoom.y + plusRoom.h + btnGap : plusRoom.y + plusRoom.h / 2;
+          return (
+            <g key={dir} data-add-dir={dir} data-base-id={plusRoom.id} className="add-btn" role="button" aria-label={`${dir}に部屋を追加`}>
+              <circle cx={cx} cy={cy} r={btnR * 1.5} fill="transparent" />
+              <circle cx={cx} cy={cy} r={btnR} fill={ACCENT} stroke="#fff" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+              <path
+                d={`M ${cx - btnR * 0.5} ${cy} H ${cx + btnR * 0.5} M ${cx} ${cy - btnR * 0.5} V ${cy + btnR * 0.5}`}
+                stroke="#fff"
+                strokeWidth={2.5}
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            </g>
+          );
+        })}
+
+        {/* 家具の当たり判定と選択 */}
+        {!planMode && (
+          <g>
+            {furniture.map((f) => (
+              <polygon
+                key={f.id}
+                data-furniture-id={f.id}
+                points={furnitureCorners(f).map((c) => `${c.x},${c.y}`).join(' ')}
+                fill="transparent"
+                className="hit-furniture"
+              />
+            ))}
+            {furniture
+              .filter((f) => showDims || f.id === selFurniture?.id)
+              .map((f) => (
+                <text
+                  key={f.id}
+                  x={f.x}
+                  y={f.y + fontPx * 0.4}
+                  fontSize={fontPx}
+                  textAnchor="middle"
+                  fontWeight={700}
+                  fill={warnIds.has(f.id) ? '#b3412f' : ACCENT}
+                  paintOrder="stroke"
+                  stroke="#fff"
+                  strokeWidth={fontPx * 0.3}
+                  pointerEvents="none"
+                  fontFamily="system-ui,sans-serif"
+                >
+                  {formatMm(f.w)}×{formatMm(f.d)}
+                </text>
+              ))}
+          </g>
+        )}
+        {selFurniture && (() => {
+          const f = selFurniture;
+          const top = handleWorld(f, 'n');
+          const rad = (f.rotation * Math.PI) / 180;
+          const off = px(touchUi ? 40 : 30);
+          const rot = { x: top.x + Math.sin(rad) * off, y: top.y - Math.cos(rad) * off };
+          return (
+            <g>
+              <polygon
+                points={furnitureCorners(f).map((c) => `${c.x},${c.y}`).join(' ')}
+                fill="none"
+                stroke={ACCENT}
+                strokeWidth={2.5}
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="none"
+              />
+              <line x1={top.x} y1={top.y} x2={rot.x} y2={rot.y} stroke={ACCENT} strokeWidth={1.5} vectorEffect="non-scaling-stroke" pointerEvents="none" />
+              <g data-frotate="1" style={{ cursor: 'grab' }} role="button" aria-label="回転">
+                <circle cx={rot.x} cy={rot.y} r={btnR * 1.4} fill="transparent" />
+                <circle cx={rot.x} cy={rot.y} r={btnR * 0.75} fill="#fff" stroke={ACCENT} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                <text x={rot.x} y={rot.y + btnR * 0.35} fontSize={btnR} textAnchor="middle" fill={ACCENT} pointerEvents="none">
+                  ↻
+                </text>
+              </g>
+              {/* 画面上で小さい家具はハンドルが本体を隠すため省略（拡大するか詳細パネルで変更） */}
+              {Math.min(f.w, f.d) * zoom >= (touchUi ? 70 : 36) && FURNITURE_HANDLES.map((h) => {
+                const p = handleWorld(f, h);
+                const hs = handleSize * 0.85;
+                return (
+                  <rect
+                    key={h}
+                    data-fhandle={h}
+                    x={p.x - hs / 2}
+                    y={p.y - hs / 2}
+                    width={hs}
+                    height={hs}
+                    rx={hs * 0.5}
+                    fill="#fff"
+                    stroke={ACCENT}
+                    strokeWidth={2}
+                    vectorEffect="non-scaling-stroke"
+                    style={{ cursor: 'pointer' }}
+                  />
+                );
+              })}
+            </g>
+          );
+        })()}
 
         {/* 開口部配置のプレビュー */}
         {ghost && tool.kind === 'placeOpening' && (() => {

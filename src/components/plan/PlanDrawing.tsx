@@ -1,4 +1,4 @@
-import { memo, useMemo, type ReactElement } from 'react';
+import { memo, useMemo, type ReactElement, type ReactNode } from 'react';
 import { openingDef, roomDef } from '../../model/catalog';
 import { computeWalls, EPS, openingGeom, type OpeningGeom } from '../../model/geometry';
 import type { Opening, Project, Room, WallSegment } from '../../model/types';
@@ -12,9 +12,9 @@ export function resolveFloor(room: Room) {
   return room.style.floor === 'auto' ? roomDef(room.type).floor : room.style.floor;
 }
 
-function FloorPatternDefs({ room }: { room: Room }) {
+function FloorPatternDefs({ room, prefix }: { room: Room; prefix: string }) {
   const floor = resolveFloor(room);
-  const id = `pat-${room.id}`;
+  const id = `${prefix}pat-${room.id}`;
   // 回転に合わせて模様の向きも回す
   const transform = `translate(${room.x} ${room.y})${room.rotation % 180 ? ' rotate(90)' : ''}`;
   switch (floor) {
@@ -45,17 +45,17 @@ function FloorPatternDefs({ room }: { room: Room }) {
   }
 }
 
-function RoomBody({ room, showFixtures }: { room: Room; showFixtures: boolean }) {
+function RoomBody({ room, showFixtures, prefix }: { room: Room; showFixtures: boolean; prefix: string }) {
   const fill = room.style.fill ?? roomDef(room.type).fill;
   const floor = resolveFloor(room);
   return (
     <g>
       <rect x={room.x} y={room.y} width={room.w} height={room.h} fill={fill} />
       {floor !== 'none' && (
-        <rect x={room.x} y={room.y} width={room.w} height={room.h} fill={`url(#pat-${room.id})`} />
+        <rect x={room.x} y={room.y} width={room.w} height={room.h} fill={`url(#${prefix}pat-${room.id})`} />
       )}
       {showFixtures && room.style.showFixtures && (
-        <g clipPath={`url(#clip-${room.id})`}>
+        <g clipPath={`url(#${prefix}clip-${room.id})`}>
           <RoomFixtures room={room} />
         </g>
       )}
@@ -259,6 +259,10 @@ export interface PlanDrawingProps {
   showFixtures?: boolean;
   /** 指定した開口部は通常描画しない（編集中のハイライト用） */
   highlightOpeningId?: string | null;
+  /** 同じ画面に複数の間取りを描くとき、SVG 内 ID の衝突を避ける接頭辞 */
+  idPrefix?: string;
+  /** 部屋・壁の上、部屋名ラベルの下に描くもの（家具レイヤー） */
+  overlay?: ReactNode;
 }
 
 /** 間取り図本体（エディタ・画像出力で共通） */
@@ -267,6 +271,8 @@ export const PlanDrawing = memo(function PlanDrawing({
   floorId,
   showFixtures = true,
   highlightOpeningId,
+  idPrefix = '',
+  overlay,
 }: PlanDrawingProps) {
   const rooms = useMemo(() => project.rooms.filter((r) => r.floorId === floorId), [project.rooms, floorId]);
   const walls = useMemo(() => computeWalls(rooms, floorId), [rooms, floorId]);
@@ -276,15 +282,15 @@ export const PlanDrawing = memo(function PlanDrawing({
       <defs>
         {rooms.map((r) => (
           <g key={r.id}>
-            <FloorPatternDefs room={r} />
-            <clipPath id={`clip-${r.id}`}>
+            <FloorPatternDefs room={r} prefix={idPrefix} />
+            <clipPath id={`${idPrefix}clip-${r.id}`}>
               <rect x={r.x} y={r.y} width={r.w} height={r.h} />
             </clipPath>
           </g>
         ))}
       </defs>
       {rooms.map((r) => (
-        <RoomBody key={r.id} room={r} showFixtures={showFixtures} />
+        <RoomBody key={r.id} room={r} showFixtures={showFixtures} prefix={idPrefix} />
       ))}
       <Walls walls={walls} openings={openings} project={project} />
       <g pointerEvents="none">
@@ -292,6 +298,7 @@ export const PlanDrawing = memo(function PlanDrawing({
           <OpeningSymbol key={o.opening.id} {...o} color={o.opening.id === highlightOpeningId ? '#1f7a63' : LINE} />
         ))}
       </g>
+      {overlay}
       {rooms.map((r) => (
         <RoomLabel key={r.id} room={r} project={project} />
       ))}

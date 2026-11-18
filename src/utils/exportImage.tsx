@@ -1,5 +1,6 @@
 import { boundsOf } from '../model/geometry';
 import type { Project } from '../model/types';
+import { FurnitureLayer } from '../components/plan/FurnitureShape';
 import { PlanDrawing } from '../components/plan/PlanDrawing';
 import { downloadBlob, safeFileName } from './io';
 
@@ -10,6 +11,8 @@ export interface ImageOptions {
   background: 'white' | 'transparent';
   showFixtures: boolean;
   showTitle: boolean;
+  /** 家具配置込み */
+  showFurniture: boolean;
 }
 
 export const DEFAULT_IMAGE_OPTIONS: ImageOptions = {
@@ -18,6 +21,7 @@ export const DEFAULT_IMAGE_OPTIONS: ImageOptions = {
   background: 'white',
   showFixtures: true,
   showTitle: true,
+  showFurniture: true,
 };
 
 const MAX_PIXELS = 8192;
@@ -52,11 +56,17 @@ export async function buildSvg(project: Project, opts: ImageOptions): Promise<{ 
     >
       {opts.background === 'white' && <rect x={box.x} y={box.y} width={box.w} height={box.h} fill="#ffffff" />}
       {opts.showGrid && <path d={gridLines.join(' ')} stroke="#e2ddd2" strokeWidth={10} fill="none" />}
-      <PlanDrawing project={project} floorId={floorId} showFixtures={opts.showFixtures} />
+      <PlanDrawing
+        project={project}
+        floorId={floorId}
+        showFixtures={opts.showFixtures}
+        overlay={opts.showFurniture && <FurnitureLayer items={project.furniture.filter((f) => f.floorId === floorId)} />}
+      />
       {opts.showTitle && (
         <g fontFamily="'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif" fill="#2d2a26">
           <text x={b.x} y={box.y + margin * 0.9} fontSize={300} fontWeight={700}>
             {project.projectName}
+            {project.plans.length > 1 ? ` ${project.plans.find((pl) => pl.id === project.activePlanId)?.name ?? ''}` : ''}
           </text>
           {/* 縮尺バー（1m） */}
           <g transform={`translate(${b.x + b.w - 1000} ${box.y + margin * 0.6})`}>

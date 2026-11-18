@@ -12,6 +12,7 @@ import { FLOOR_PATTERNS, type AreaUnit, type FloorPattern, type Opening, type Ro
 import { areaM2, formatArea, sizeFromTatami, tatamiFromSize } from '../model/units';
 import { activeRooms, useStore } from '../store/store';
 import { NumberField, Segmented, TextField, toUnit, UNIT_FACTOR, type LengthUnit } from './fields';
+import { FurnitureProps, FurnitureSummary } from './FurniturePanel';
 
 const SIDE_LABEL: Record<Side, string> = { top: '上', right: '右', bottom: '下', left: '左' };
 
@@ -341,6 +342,11 @@ function ProjectProps() {
 export function PropertiesPanel() {
   const project = useStore((s) => s.project);
   const selection = useStore((s) => s.selection);
+  const mode = useStore((s) => s.mode);
+  if (mode === 'furniture') {
+    const f = selection?.kind === 'furniture' ? project.furniture.find((x) => x.id === selection.id) : undefined;
+    return f ? <FurnitureProps key={f.id} item={f} /> : <FurnitureSummary />;
+  }
   if (selection?.kind === 'room') {
     const room = project.rooms.find((r) => r.id === selection.id);
     if (room) return <RoomProps key={room.id} room={room} />;

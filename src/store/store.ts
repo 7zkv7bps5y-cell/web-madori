@@ -9,8 +9,22 @@ import {
   rotateOpeningCW,
   type WallHit,
 } from '../model/geometry';
-import { createOpening, createProject, createRoom, uid } from '../model/project';
+import {
+  activeContent,
+  addPlan,
+  createFurniture,
+  createOpening,
+  createProject,
+  createRoom,
+  deletePlan,
+  MAX_PLANS,
+  renamePlan,
+  switchPlan,
+  uid,
+} from '../model/project';
 import type {
+  EditorMode,
+  Furniture,
   Opening,
   OpeningType,
   Project,
@@ -47,6 +61,7 @@ interface State {
   toast: Toast | null;
   /** ドラッグ中の一時状態の基準 */
   dragBase: Project | null;
+  mode: EditorMode;
 
   // 基本
   commit: (fn: (p: Project) => Project) => void;
@@ -62,6 +77,7 @@ interface State {
   setSettings: (patch: Partial<Project['settings']>) => void;
 
   // UI
+  setMode: (m: EditorMode) => void;
   select: (s: Selection | null) => void;
   setTool: (t: Tool) => void;
   openAddDialog: (s: AddDialogState) => void;
@@ -83,9 +99,25 @@ interface State {
   updateOpening: (id: string, patch: Partial<Omit<Opening, 'id'>>) => void;
   deleteOpening: (id: string) => void;
 
+  // 家具
+  addFurniture: (type: string, at: { x: number; y: number }) => void;
+  updateFurniture: (id: string, patch: Partial<Omit<Furniture, 'id'>>) => void;
+  rotateFurniture: (id: string, delta: number) => void;
+  duplicateFurniture: (id: string) => void;
+  deleteFurniture: (id: string) => void;
+
+  // 間取り案（A案・B案…）
+  addPlan: (duplicateCurrent: boolean) => boolean;
+  switchPlan: (planId: string) => void;
+  renamePlan: (planId: string, name: string) => void;
+  deletePlan: (planId: string) => void;
+
   deleteSelection: () => void;
   duplicateSelection: () => void;
+  rotateSelection: () => void;
 }
+
+export const normalizeAngle = (a: number) => ((Math.round(a) % 360) + 360) % 360;
 
 const touch = (p: Project): Project => ({ ...p, updatedAt: new Date().toISOString() });
 
@@ -109,6 +141,7 @@ export const useStore = create<State>((set, get) => ({
   addDialog: null,
   toast: null,
   dragBase: null,
+  mode: 'plan',
 
   commit: (fn) => {
     const { project, past } = get();
@@ -154,6 +187,7 @@ export const useStore = create<State>((set, get) => ({
   setProjectName: (name) => get().commit((p) => (p.projectName === name ? p : { ...p, projectName: name })),
   setSettings: (patch) => get().commit((p) => ({ ...p, settings: { ...p.settings, ...patch } })),
 
+  setMode: (m) => set({ mode: m, selection: null, tool: { kind: 'select' } }),
   select: (s) => set({ selection: s }),
   setTool: (t) => set({ tool: t }),
   openAddDialog: (s) => set({ addDialog: s }),
@@ -306,17 +340,68 @@ export const useStore = create<State>((set, get) => ({
     set({ selection: null });
   },
 
+  addFurniture: (type, at) => {
+    const f = createFurniture(type, at, get().project.settings.activeFloorId);
+    get().commit((p) => ({ ...p, furniture: [...p.furniture, f] }));
+    set({ selection: { kind: 'furniture', id: f.id } });
+  },
+  updateFurniture: (id, patch) =>
+    get().commit((p) => ({ ...p, furniture: p.furniture.map((f) => (f.id === id ? { ...f, ...patch } : f)) })),
+  rotateFurniture: (id, delta) =>
+    get().commit((p) => ({
+      ...p,
+      furniture: p.furniture.map((f) => (f.id === id ? { ...f, rotation: normalizeAngle(f.rotation + delta) } : f)),
+    })),
+  duplicateFurniture: (id) => {
+    const f = get().project.furniture.find((x) => x.id === id);
+    if (!f) return;
+    const copy: Furniture = { ...f, id: uid('fur'), x: f.x + 300, y: f.y + 300 };
+    get().commit((p) => ({ ...p, furniture: [...p.furniture, copy] }));
+    set({ selection: { kind: 'furniture', id: copy.id } });
+  },
+  deleteFurniture: (id) => {
+    get().commit((p) => ({ ...p, furniture: p.furniture.filter((f) => f.id !== id) }));
+    set({ selection: null });
+  },
+
+  addPlan: (duplicateCurrent) => {
+    const { project } = get();
+    if (project.plans.length >= MAX_PLANS) {
+      get().notify(`間取り案は ${MAX_PLANS} 案までです。`, 'error');
+      return false;
+    }
+    get().commit((p) => addPlan(p, duplicateCurrent ? activeContent(p) : undefined));
+    set({ selection: null, tool: { kind: 'select' } });
+    return true;
+  },
+  switchPlan: (planId) => {
+    get().commit((p) => switchPlan(p, planId));
+    set({ selection: null, tool: { kind: 'select' } });
+  },
+  renamePlan: (planId, name) => get().commit((p) => renamePlan(p, planId, name.trim() || p.plans.find((e) => e.id === planId)?.name || '案')),
+  deletePlan: (planId) => {
+    get().commit((p) => deletePlan(p, planId));
+    set({ selection: null });
+  },
+
   deleteSelection: () => {
     const s = get().selection;
     if (!s) return;
     if (s.kind === 'room') get().deleteRoom(s.id);
     else if (s.kind === 'opening') get().deleteOpening(s.id);
+    else get().deleteFurniture(s.id);
+  },
+  rotateSelection: () => {
+    const s = get().selection;
+    if (s?.kind === 'room') get().rotateRoom(s.id);
+    else if (s?.kind === 'furniture') get().rotateFurniture(s.id, 90);
   },
 
   duplicateSelection: () => {
     const s = get().selection;
     if (!s) return;
     if (s.kind === 'room') get().duplicateRoom(s.id);
+    else if (s.kind === 'furniture') get().duplicateFurniture(s.id);
     else if (s.kind === 'opening') {
       const o = get().project.openings.find((x) => x.id === s.id);
       const room = o && get().project.rooms.find((r) => r.id === o.roomId);

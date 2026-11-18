@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store/store';
+import { useView } from '../store/view';
 
 export interface ProjectActions {
   newProject: () => void;
@@ -9,6 +10,53 @@ export interface ProjectActions {
   pasteJson: () => void;
   exportImage: () => void;
   openTemplate: () => void;
+  openPlans: () => void;
+}
+
+export function ModeTabs() {
+  const mode = useStore((s) => s.mode);
+  const setMode = useStore((s) => s.setMode);
+  return (
+    <div className="mode-tabs" role="tablist" aria-label="編集モード">
+      <button type="button" role="tab" aria-selected={mode === 'plan'} className={mode === 'plan' ? 'active' : ''} onClick={() => setMode('plan')}>
+        間取り作成
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === 'furniture'}
+        className={mode === 'furniture' ? 'active' : ''}
+        onClick={() => setMode('furniture')}
+      >
+        家具配置
+      </button>
+    </div>
+  );
+}
+
+function PlanSelect({ onManage }: { onManage: () => void }) {
+  const plans = useStore((s) => s.project.plans);
+  const activeId = useStore((s) => s.project.activePlanId);
+  const switchPlan = useStore((s) => s.switchPlan);
+  return (
+    <select
+      className="plan-select"
+      aria-label="間取り案"
+      value={activeId}
+      onChange={(e) => {
+        if (e.target.value === '__manage') return onManage();
+        switchPlan(e.target.value);
+        useView.getState().requestFit();
+      }}
+    >
+      {plans.map((p) => (
+        <option key={p.id} value={p.id}>
+          {p.name}
+        </option>
+      ))}
+      <option value="__manage">案の追加・比較…</option>
+    </select>
+  );
 }
 
 function Menu({ label, children, className = '' }: { label: React.ReactNode; children: React.ReactNode; className?: string }) {
@@ -54,6 +102,9 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
       <button role="menuitem" type="button" onClick={actions.openTemplate}>
         サンプル間取りを開く
       </button>
+      <button role="menuitem" type="button" onClick={actions.openPlans}>
+        間取り案の管理・比較…
+      </button>
       <button role="menuitem" type="button" onClick={actions.openFile}>
         ファイルを開く…
       </button>
@@ -88,6 +139,12 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
         onBlur={() => setName(text.trim() || '無題の間取り')}
         onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
       />
+      <PlanSelect onManage={actions.openPlans} />
+      {!compact && (
+        <button type="button" onClick={actions.openPlans} title="A案・B案…を並べて比較">
+          比較
+        </button>
+      )}
       {!compact && <span className="save-state muted small">{saveState}</span>}
       <div className="spacer" />
       {compact ? (
@@ -104,14 +161,7 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
               ↷ やり直す
             </button>
           </div>
-          <div className="mode-tabs" role="tablist" aria-label="編集モード">
-            <button type="button" role="tab" aria-selected="true" className="active">
-              間取り作成
-            </button>
-            <button type="button" role="tab" aria-selected="false" disabled title="次の開発段階（フェーズ2）で実装予定です">
-              家具配置（準備中）
-            </button>
-          </div>
+          <ModeTabs />
           <div className="btn-group">
             <button type="button" onClick={actions.openFile}>
               開く

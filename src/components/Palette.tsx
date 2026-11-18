@@ -1,7 +1,52 @@
 import { OPENING_TYPE_DEFS, ROOM_TYPE_DEFS, type RoomTypeDef } from '../model/catalog';
 import type { OpeningType } from '../model/types';
 import { useStore } from '../store/store';
-import { addRoomNearCenter, ROOM_DRAG_MIME } from './Canvas';
+import { FURNITURE_CATEGORIES, FURNITURE_DEFS } from '../model/furnitureCatalog';
+import { addFurnitureNearCenter, addRoomNearCenter, FURNITURE_DRAG_MIME, ROOM_DRAG_MIME } from './Canvas';
+
+function FurniturePalette({ onPicked }: { onPicked?: () => void }) {
+  return (
+    <div className="palette">
+      <p className="palette-hint">
+        <span className="hint-pc">クリックで画面中央に追加（キャンバスへドラッグでも配置できます）。</span>
+        <span className="hint-touch">タップで画面中央に追加します。</span>
+        サイズは標準的な実寸です。後から変更できます。
+      </p>
+      {FURNITURE_CATEGORIES.map((c) => (
+        <section key={c.key} className="palette-section">
+          <h3>{c.label}</h3>
+          <div className="palette-grid">
+            {FURNITURE_DEFS.filter((d) => d.category === c.key).map((d) => (
+              <button
+                key={d.type}
+                type="button"
+                className="palette-item"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(FURNITURE_DRAG_MIME, d.type);
+                  e.dataTransfer.effectAllowed = 'copy';
+                }}
+                onClick={() => {
+                  addFurnitureNearCenter(d.type);
+                  onPicked?.();
+                }}
+                title={`${d.label}（幅${d.w / 10}×奥行${d.d / 10}cm）`}
+              >
+                <span className="swatch" style={{ background: d.fill }} />
+                <span className="palette-label">
+                  {d.label}
+                  <small>
+                    {d.w / 10}×{d.d / 10}
+                  </small>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
 
 const GROUPS: { key: RoomTypeDef['group']; label: string }[] = [
   { key: 'main', label: '部屋' },
@@ -49,6 +94,12 @@ function OpeningIcon({ type }: { type: OpeningType }) {
 }
 
 export function Palette({ onPicked }: { onPicked?: () => void }) {
+  const mode = useStore((s) => s.mode);
+  if (mode === 'furniture') return <FurniturePalette onPicked={onPicked} />;
+  return <PlanPalette onPicked={onPicked} />;
+}
+
+function PlanPalette({ onPicked }: { onPicked?: () => void }) {
   const tool = useStore((s) => s.tool);
   const setTool = useStore((s) => s.setTool);
   return (

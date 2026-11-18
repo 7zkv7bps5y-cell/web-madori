@@ -194,3 +194,28 @@ textarea.transfer { min-height: 180px; font-family: ui-monospace, monospace; fon
 .is-mobile .hint-pc { display: none; }
 .is-mobile .menu > button { font-size: 20px; min-width: 44px; }
 .is-mobile .toast { bottom: calc(130px + env(safe-area-inset-bottom)); }
+.canvas .hit-furniture { cursor: move; }
+.palette-label { display: flex; flex-direction: column; line-height: 1.2; text-align: left; white-space: normal; }
+.palette-label small { font-size: 10px; color: var(--muted); }
+.warn-list { margin: 0; padding-left: 18px; font-size: 13px; color: var(--danger); line-height: 1.6; }
+.warn-list button { border: 0; padding: 0; min-height: 0; color: inherit; text-decoration: underline; background: none; }
+.modal.wide { width: min(1100px, 100%); }
+.plan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.plan-card { border: 1px solid var(--border); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: #fff; }
+.plan-card.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-weak); }
+.plan-card-head { display: flex; align-items: flex-end; gap: 8px; }
+.plan-card-head .field { flex: 1; }
+.badge { background: var(--accent); color: #fff; border-radius: 999px; padding: 2px 10px; font-size: 12px; white-space: nowrap; margin-bottom: 6px; }
+.thumb { width: 100%; aspect-ratio: 4 / 3; background: #fbfaf7; border-radius: 8px; border: 1px solid var(--border); display: block; }
+.empty-thumb { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
+.plan-stats { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; font-size: 13px; }
+.plan-stats dt { color: var(--muted); }
+.plan-stats dd { margin: 0; font-weight: 600; }
+.plan-select { max-width: 120px; min-height: 34px; }
+.is-mobile .plan-select { max-width: 88px; }
+.logo span, .save-state { white-space: nowrap; }
+.topbar > * { flex-shrink: 0; }
+.topbar .project-name { flex-shrink: 1; min-width: 80px; }
+@media (max-width: 1360px) { .save-state { display: none; } }
+@media (max-width: 1100px) { .logo span { display: none; } }
+.is-mobile .banner { top: auto; bottom: 64px; }

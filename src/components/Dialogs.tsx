@@ -4,10 +4,10 @@ import { useStore } from '../store/store';
 import { useView } from '../store/view';
 import { DEFAULT_IMAGE_OPTIONS, exportPng, type ImageOptions } from '../utils/exportImage';
 
-export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title} onKeyDown={(e) => e.key === 'Escape' && onClose()}>
+      <div className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} onKeyDown={(e) => e.key === 'Escape' && onClose()}>
         <h2>{title}</h2>
         {children}
       </div>
@@ -48,9 +48,9 @@ export function ExportImageDialog({ onClose }: { onClose: () => void }) {
           <input type="checkbox" checked={opts.showTitle} onChange={(e) => set({ showTitle: e.target.checked })} />
           タイトルと縮尺を表示
         </label>
-        <label className="check disabled" title="家具配置モードの実装後に利用できます">
-          <input type="checkbox" disabled />
-          家具を含める（家具配置モードで対応予定）
+        <label className="check">
+          <input type="checkbox" checked={opts.showFurniture} onChange={(e) => set({ showFurniture: e.target.checked })} />
+          家具・家電を含める（オフで間取りのみ）
         </label>
       </div>
       <div className="modal-actions">

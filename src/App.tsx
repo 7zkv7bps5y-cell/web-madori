@@ -4,7 +4,9 @@ import { Canvas } from './components/Canvas';
 import { ExportImageDialog, TextTransferDialog } from './components/Dialogs';
 import { Palette } from './components/Palette';
 import { PropertiesPanel } from './components/PropertiesPanel';
+import { PlansDialog } from './components/PlansDialog';
 import { TopBar, type ProjectActions } from './components/TopBar';
+import { furnitureDef } from './model/furnitureCatalog';
 import { openingDef } from './model/catalog';
 import { serializeProject, parseProject } from './model/project';
 import { TEMPLATES } from './model/templates';
@@ -67,7 +69,8 @@ function PlacementBanner() {
   return (
     <div className="banner">
       <span>
-        <b>{openingDef(tool.type).label}</b>：取り付ける壁をクリック（タップ）してください
+        <b>{openingDef(tool.type).label}</b>：取り付ける壁を<span className="hint-pc">クリック</span>
+        <span className="hint-touch">タップ</span>してください
       </span>
       <button type="button" onClick={() => setTool({ kind: 'select' })}>
         やめる
@@ -79,7 +82,24 @@ function PlacementBanner() {
 function EmptyState({ onTemplate }: { onTemplate: () => void }) {
   const count = useStore((s) => s.project.rooms.length);
   const open = useStore((s) => s.openAddDialog);
+  const mode = useStore((s) => s.mode);
+  const setMode = useStore((s) => s.setMode);
   if (count > 0) return null;
+  if (mode === 'furniture') {
+    return (
+      <div className="empty">
+        <div className="empty-card">
+          <h2>先に間取りを作りましょう</h2>
+          <p>家具は作成した間取りの上に配置します。家具だけを置いて寸法を確かめることもできます。</p>
+          <div className="modal-actions center">
+            <button type="button" className="primary" onClick={() => setMode('plan')}>
+              間取り作成へ
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="empty">
       <div className="empty-card">
@@ -111,12 +131,12 @@ function MobileSelectionBar({ onDetail }: { onDetail: () => void }) {
       ? project.rooms.find((r) => r.id === selection.id)?.name
       : selection.kind === 'opening'
         ? openingDef(project.openings.find((o) => o.id === selection.id)?.type ?? 'door').label
-        : '';
+        : project.furniture.find((f) => f.id === selection.id)?.name ?? furnitureDef('').label;
   return (
     <div className="mobile-selbar">
       <strong className="ellipsis">{label}</strong>
-      {selection.kind === 'room' && (
-        <button type="button" onClick={() => st.rotateRoom(selection.id)}>
+      {selection.kind !== 'opening' && (
+        <button type="button" onClick={() => st.rotateSelection()}>
           ↻
           <small>回転</small>
         </button>
@@ -139,6 +159,8 @@ export default function App() {
   const coarse = useMedia('(pointer: coarse)');
   const [sheet, setSheet] = useState<'none' | 'parts' | 'props'>('none');
   const [exportOpen, setExportOpen] = useState(false);
+  const [plansOpen, setPlansOpen] = useState(false);
+  const mode = useStore((s) => s.mode);
   const [transfer, setTransfer] = useState<{ mode: 'copy' | 'paste'; text?: string } | null>(null);
   const [saveState, setSaveState] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
@@ -207,6 +229,7 @@ export default function App() {
       notify('間取りを貼り付けました（元に戻すで戻せます）。');
     },
     exportImage: () => setExportOpen(true),
+    openPlans: () => setPlansOpen(true),
   };
 
   // キーボードショートカット
@@ -237,8 +260,16 @@ export default function App() {
       } else if (e.key === 'Escape') {
         st.setTool({ kind: 'select' });
         st.select(null);
-      } else if (e.key.toLowerCase() === 'r' && !mod && st.selection?.kind === 'room') {
-        st.rotateRoom(st.selection.id);
+      } else if (e.key.toLowerCase() === 'r' && !mod) {
+        st.rotateSelection();
+      } else if (e.key.startsWith('Arrow') && st.selection?.kind === 'furniture') {
+        e.preventDefault();
+        const step = e.shiftKey ? 100 : 10;
+        const f = st.project.furniture.find((x) => x.id === st.selection!.id);
+        if (!f) return;
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+        st.updateFurniture(f.id, { x: f.x + dx, y: f.y + dy });
       }
     };
     window.addEventListener('keydown', onKey);
@@ -301,6 +332,16 @@ export default function App() {
             <button type="button" onClick={() => useView.getState().requestFit()}>
               ⤢<small>全体</small>
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSheet('none');
+                useStore.getState().setMode(mode === 'plan' ? 'furniture' : 'plan');
+              }}
+            >
+              {mode === 'plan' ? '🛋' : '📐'}
+              <small>{mode === 'plan' ? '家具配置へ' : '間取りへ'}</small>
+            </button>
             <button type="button" className={sheet === 'props' ? 'active' : ''} onClick={() => setSheet(sheet === 'props' ? 'none' : 'props')}>
               ⚙<small>設定</small>
             </button>
@@ -325,6 +366,7 @@ export default function App() {
         }}
       />
       <AddRoomDialog />
+      {plansOpen && <PlansDialog onClose={() => setPlansOpen(false)} />}
       {exportOpen && <ExportImageDialog onClose={() => setExportOpen(false)} />}
       {transfer && <TextTransferDialog mode={transfer.mode} text={transfer.text} onClose={() => setTransfer(null)} />}
       <Toast />

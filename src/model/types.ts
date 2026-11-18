@@ -97,18 +97,30 @@ export interface Opening {
   swing: 'in' | 'out';
 }
 
+/**
+ * 家具・家電・設備。部屋とは独立したオブジェクトで、ワールド座標(mm)で保持する。
+ * ローカル座標系: 幅(w)方向 = x、奥行き(d)方向 = y。奥(-y 側)が背面（壁に付ける側）、手前(+y 側)が正面。
+ * この「正面」の約束は将来の生活動線チェック（扉・引き出しの可動範囲）で使う。
+ */
 export interface Furniture {
   id: string;
   floorId: string;
+  /** 家具カタログの種類 ID（例: 'bed-single'） */
   type: string;
   name: string;
+  /** 中心座標 */
   x: Mm;
   y: Mm;
   /** 幅 */
   w: Mm;
   /** 奥行き */
   d: Mm;
+  /** 高さ（3D化・将来の干渉チェック用） */
+  height: Mm;
+  /** 回転角（度、時計回り） */
   rotation: number;
+  /** 将来の家具商品連携用。実在商品の ID（未連携は null） */
+  productId: string | null;
 }
 
 export interface Floor {
@@ -131,21 +143,49 @@ export interface ProjectSettings {
   tatamiArea: number;
   exteriorWallThickness: Mm;
   interiorWallThickness: Mm;
+  /** 家具配置モードのスナップ間隔(mm) */
+  furnitureGrid: Mm;
   activeFloorId: string;
 }
 
 export const PROJECT_FORMAT = 'web-madori' as const;
-export const PROJECT_VERSION = 1 as const;
+export const PROJECT_VERSION = 2 as const;
+
+/** 1 つの間取り案の中身 */
+export interface PlanContent {
+  floors: Floor[];
+  rooms: Room[];
+  openings: Opening[];
+  furniture: Furniture[];
+  activeFloorId: string;
+}
+
+/**
+ * 間取り案（A案・B案…）。
+ * 編集中の案の中身は Project 直下（rooms など）にあり、その案の content は null。
+ * 保存ファイルでは全案の中身が plans[] に正規化される（project.ts 参照）。
+ */
+export interface PlanEntry {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  content: PlanContent | null;
+}
 
 export interface Project {
   format: typeof PROJECT_FORMAT;
   version: typeof PROJECT_VERSION;
   projectId: string;
   projectName: string;
+  /* ---- 編集中の案（activePlanId）の中身 ---- */
   floors: Floor[];
   rooms: Room[];
   openings: Opening[];
   furniture: Furniture[];
+  /* ---- 案の一覧 ---- */
+  activePlanId: string;
+  plans: PlanEntry[];
   settings: ProjectSettings;
   createdAt: string;
   updatedAt: string;
@@ -176,3 +216,5 @@ export type Selection =
   | { kind: 'room'; id: string }
   | { kind: 'opening'; id: string }
   | { kind: 'furniture'; id: string };
+
+export type EditorMode = 'plan' | 'furniture';
