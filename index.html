@@ -2,14 +2,186 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="description" content="ブラウザで誰でもかんたんに住宅の間取りを作成できる無料ツール。部屋を組み合わせて間取りを作り、保存・画像出力ができます。" />
-    <meta name="theme-color" content="#2f6f5e" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web間取り｜無料で使える間取り作成ツール（登録不要・スマホ対応）</title>
+    <meta name="description" content="Web間取りは、ブラウザで誰でもかんたんに住宅の間取りを作れる無料ツールです。部屋の上下左右の＋を押すだけで部屋がつながり、家具の配置、複数案の比較、画像保存まで登録不要で使えます。" />
+    <meta name="theme-color" content="#1f7a63" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <title>Web間取り - 無料の間取り作成ツール</title>
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Web間取り" />
+    <meta property="og:title" content="Web間取り｜無料で使える間取り作成ツール" />
+    <meta property="og:description" content="部屋の＋を押すだけで間取りが作れる。家具配置・複数案の比較・画像保存まで、登録不要・無料。" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Web間取り",
+        "applicationCategory": "DesignApplication",
+        "operatingSystem": "Web",
+        "inLanguage": "ja",
+        "description": "ブラウザで住宅の間取りを作成し、家具を配置できる無料ツール",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "JPY" }
+      }
+    </script>
+    <script type="module" src="/src/site/site.ts"></script>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <!--site:header-->
+    <main>
+      <section class="hero">
+        <div class="wrap">
+          <div>
+            <h1>
+              <span class="nb">部屋の「＋」を</span><span class="nb">押すだけ。</span><br />
+              <span class="nb">誰でもかんたん</span><span class="nb">間取りづくり</span>
+            </h1>
+            <p>
+              Web間取りは、ブラウザで住宅の間取りを作れる無料ツールです。部屋をパズルのように組み合わせて、家具を置いて、暮らしをシミュレーションできます。
+            </p>
+            <ul class="badges">
+              <li>登録不要</li>
+              <li>完全無料</li>
+              <li>スマホ対応</li>
+              <li>画像で保存</li>
+            </ul>
+            <p>
+              <a class="btn primary large" href="/editor/">無料で間取りを作る</a>
+              <a class="btn large" href="/templates/">テンプレートを見る</a>
+            </p>
+          </div>
+          <div class="hero-visual">
+            <img src="/images/editor-pc.jpg" width="1200" height="740" alt="Web間取りの編集画面。LDKや和室、寝室が並んだ間取りと、部屋を追加する＋ボタン" />
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap">
+          <h2 class="section-title">Web間取りでできること</h2>
+          <p class="section-lead">専門的なCADの知識は必要ありません。</p>
+          <div class="grid">
+            <div class="card">
+              <div class="icon" aria-hidden="true">🧩</div>
+              <h3>パズル感覚で部屋を追加</h3>
+              <p>部屋を選んで上下左右の＋を押すと、その方向に部屋がつながります。壁や接続は自動で整います。</p>
+            </div>
+            <div class="card">
+              <div class="icon" aria-hidden="true">📐</div>
+              <h3>畳数やcmで広さを指定</h3>
+              <p>「6畳」「幅364cm」など好きな方法で入力。帖・㎡・坪の表示も切り替えられます。</p>
+            </div>
+            <div class="card">
+              <div class="icon" aria-hidden="true">🛋️</div>
+              <h3>家具を実寸で配置</h3>
+              <p>ベッドやソファ、冷蔵庫などを実際のサイズで置けます。壁や家具との重なりもチェック。</p>
+            </div>
+            <div class="card">
+              <div class="icon" aria-hidden="true">🔀</div>
+              <h3>A案・B案を比較</h3>
+              <p>複数の案を保存して並べて比較。部屋数や面積の違いがひと目でわかります。</p>
+            </div>
+            <div class="card">
+              <div class="icon" aria-hidden="true">💾</div>
+              <h3>保存・画像出力</h3>
+              <p>作った間取りは自動で保存。ファイル保存やPNG画像、データのコピーで共有もできます。</p>
+            </div>
+            <div class="card">
+              <div class="icon" aria-hidden="true">📱</div>
+              <h3>スマホでも使える</h3>
+              <p>タッチ操作とピンチズームに対応した、スマートフォン専用の操作画面を用意しています。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="alt">
+        <div class="wrap">
+          <h2 class="section-title">はじめての方へ：3ステップで完成</h2>
+          <p class="section-lead">くわしくは<a href="/guide/">使い方ガイド</a>をご覧ください。</p>
+          <ol class="steps">
+            <li>
+              <h3>最初の部屋を置く</h3>
+              <p>「最初の部屋を追加」から部屋の種類と広さを選びます。テンプレートから始めることもできます。</p>
+            </li>
+            <li>
+              <h3>＋で部屋をつなげる</h3>
+              <p>部屋を選ぶと上下左右に＋が出ます。押して種類を選ぶだけで、隣に部屋が増えていきます。</p>
+            </li>
+            <li>
+              <h3>ドア・窓と家具を置く</h3>
+              <p>ドアや窓は壁をタップして取り付け。家具配置モードに切り替えて家具を置けば完成です。</p>
+            </li>
+          </ol>
+          <p class="cta"><a class="btn primary large" href="/editor/">さっそく作ってみる</a></p>
+        </div>
+      </section>
+
+      <!--site:ad:top-middle-->
+
+      <section>
+        <div class="wrap">
+          <h2 class="section-title">間取りテンプレート・作成例</h2>
+          <p class="section-lead">テンプレートを開いて、自由に作り変えられます。</p>
+          <div class="grid">
+            <a class="card template-card" href="/editor/?template=1k">
+              <img src="/templates/1k.svg" width="400" height="300" loading="lazy" alt="1Kの間取り図" />
+              <h3>1K</h3>
+              <p>一人暮らし向けのコンパクトな間取り</p>
+            </a>
+            <a class="card template-card" href="/editor/?template=1ldk">
+              <img src="/templates/1ldk.svg" width="400" height="300" loading="lazy" alt="1LDKの間取り図" />
+              <h3>1LDK</h3>
+              <p>LDKの隣に寝室。二人暮らしにも</p>
+            </a>
+            <a class="card template-card" href="/editor/?template=2ldk-flat">
+              <img src="/templates/2ldk-flat.svg" width="400" height="300" loading="lazy" alt="平屋2LDKの間取り図" />
+              <h3>2LDK（平屋）</h3>
+              <p>和室と寝室、水回りがそろった平屋</p>
+            </a>
+            <a class="card template-card" href="/editor/?template=4ldk">
+              <img src="/templates/4ldk.svg" width="400" height="300" loading="lazy" alt="4LDKの間取り図" />
+              <h3>4LDK</h3>
+              <p>LDKと和室がつながるファミリー向け</p>
+            </a>
+          </div>
+          <p class="cta"><a class="btn" href="/templates/">テンプレート一覧へ</a></p>
+        </div>
+      </section>
+
+      <section class="alt">
+        <div class="wrap">
+          <h2 class="section-title">間取りづくりのコラム</h2>
+          <p class="section-lead">間取りを考えるときに役立つ基礎知識</p>
+          <div class="grid">
+            <a class="card" href="/articles/tatami-tsubo/">
+              <h3>畳・帖・㎡・坪の違いと換算</h3>
+              <p>「6畳」は何㎡？ 不動産広告の帖数の決まりや、地域で違う畳の大きさをまとめました。</p>
+            </a>
+            <a class="card" href="/articles/furniture-layout/">
+              <h3>家具配置で確認したい通路幅の目安</h3>
+              <p>人が通る・椅子を引く・引き出しを開ける。暮らしやすい家具配置のための寸法の目安です。</p>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap doc">
+          <h2 class="section-title">よくある質問</h2>
+          <h3>会員登録は必要ですか？</h3>
+          <p>必要ありません。ページを開けばすぐに使えます。</p>
+          <h3>作った間取りはどこに保存されますか？</h3>
+          <p>
+            お使いのブラウザの中に自動保存されます。運営者のサーバーには送信されません。ブラウザのデータを消すと失われるため、大切な間取りは「保存」からファイルに保存してください。
+          </p>
+          <h3>スマートフォンでも使えますか？</h3>
+          <p>はい。タッチ操作に合わせた画面で、部屋の追加や家具の配置ができます。</p>
+          <h3>作った間取り図を人に見せたい</h3>
+          <p>PNG画像で保存できます。編集できる形で渡したいときは、ファイル保存か「間取りデータをコピー」をご利用ください。</p>
+        </div>
+      </section>
+    </main>
+    <!--site:footer-->
   </body>
 </html>

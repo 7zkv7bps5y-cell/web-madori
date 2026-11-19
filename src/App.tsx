@@ -5,6 +5,8 @@ import { ExportImageDialog, TextTransferDialog } from './components/Dialogs';
 import { Palette } from './components/Palette';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { PlansDialog } from './components/PlansDialog';
+import { TemplatesDialog } from './components/TemplatesDialog';
+import { initAds } from './site/ads';
 import { TopBar, type ProjectActions } from './components/TopBar';
 import { furnitureDef } from './model/furnitureCatalog';
 import { openingDef } from './model/catalog';
@@ -112,7 +114,7 @@ function EmptyState({ onTemplate }: { onTemplate: () => void }) {
             ＋ 最初の部屋を追加
           </button>
           <button type="button" onClick={onTemplate}>
-            サンプル間取りを開く
+            テンプレートから始める
           </button>
         </div>
       </div>
@@ -160,6 +162,7 @@ export default function App() {
   const [sheet, setSheet] = useState<'none' | 'parts' | 'props'>('none');
   const [exportOpen, setExportOpen] = useState(false);
   const [plansOpen, setPlansOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const mode = useStore((s) => s.mode);
   const [transfer, setTransfer] = useState<{ mode: 'copy' | 'paste'; text?: string } | null>(null);
   const [saveState, setSaveState] = useState('');
@@ -168,13 +171,21 @@ export default function App() {
   const canRedo = useStore((s) => s.future.length > 0);
   const selection = useStore((s) => s.selection);
 
-  // 自動保存の復元
+  // 自動保存の復元。?template=ID で開いた場合はそのテンプレートを読み込む（元に戻すで直前の間取りに戻せる）
   useEffect(() => {
     const saved = loadAutosave();
-    if (saved) {
-      useStore.getState().loadProject(saved, false);
-      useView.getState().requestFit();
+    if (saved) useStore.getState().loadProject(saved, false);
+    const params = new URLSearchParams(window.location.search);
+    const tpl = TEMPLATES.find((t) => t.id === params.get('template'));
+    if (tpl) {
+      useStore.getState().loadProject(tpl.create(), !!saved);
+      useStore.getState().notify(`テンプレート「${tpl.name}」を開きました。`);
+    } else if (params.has('new') && saved && saved.rooms.length > 0) {
+      useStore.getState().newProject();
     }
+    if (params.toString()) window.history.replaceState(null, '', window.location.pathname);
+    useView.getState().requestFit();
+    initAds();
   }, []);
 
   // 自動保存（変更から 0.8 秒後）
@@ -201,11 +212,7 @@ export default function App() {
       useView.getState().requestFit();
       notify('新しい間取りを作成しました（元に戻すで前の間取りに戻せます）。');
     },
-    openTemplate: () => {
-      useStore.getState().loadProject(TEMPLATES[0].create());
-      useView.getState().requestFit();
-      notify('サンプル間取りを開きました。');
-    },
+    openTemplate: () => setTemplatesOpen(true),
     openFile: () => fileRef.current?.click(),
     saveFile: () => {
       saveProjectFile(useStore.getState().project);
@@ -288,6 +295,8 @@ export default function App() {
         {!mobile && (
           <aside className="sidebar left" aria-label="パーツ一覧">
             <Palette />
+            {/* 広告枠（AdSense 設定時のみ表示。キャンバス内には置かない） */}
+            <aside className="ad-slot" data-ad-slot="editor-sidebar" aria-label="広告" />
           </aside>
         )}
         <section className="stage">
@@ -366,6 +375,18 @@ export default function App() {
         }}
       />
       <AddRoomDialog />
+      {templatesOpen && (
+        <TemplatesDialog
+          onClose={() => setTemplatesOpen(false)}
+          onPick={(id) => {
+            const t = TEMPLATES.find((x) => x.id === id)!;
+            useStore.getState().loadProject(t.create());
+            useView.getState().requestFit();
+            notify(`テンプレート「${t.name}」を開きました（元に戻すで戻せます）。`);
+            setTemplatesOpen(false);
+          }}
+        />
+      )}
       {plansOpen && <PlansDialog onClose={() => setPlansOpen(false)} />}
       {exportOpen && <ExportImageDialog onClose={() => setExportOpen(false)} />}
       {transfer && <TextTransferDialog mode={transfer.mode} text={transfer.text} onClose={() => setTransfer(null)} />}

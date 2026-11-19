@@ -100,7 +100,7 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
         新規作成
       </button>
       <button role="menuitem" type="button" onClick={actions.openTemplate}>
-        サンプル間取りを開く
+        テンプレートから始める…
       </button>
       <button role="menuitem" type="button" onClick={actions.openPlans}>
         間取り案の管理・比較…
@@ -121,12 +121,19 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
       <button role="menuitem" type="button" onClick={actions.pasteJson}>
         間取りデータを貼り付け
       </button>
+      <hr />
+      <a role="menuitem" href="/guide/" target="_blank" rel="noopener">
+        使い方ガイド
+      </a>
+      <a role="menuitem" href="/">
+        トップページへ
+      </a>
     </>
   );
 
   return (
     <header className="topbar">
-      <a className="logo" href="./" aria-label="Web間取り">
+      <a className="logo" href="/" aria-label="Web間取り トップページ">
         <img src="/favicon.svg" alt="" width={24} height={24} />
         {!compact && <span>Web間取り</span>}
       </a>

@@ -11,6 +11,33 @@ npm test           # ユニットテスト（Vitest）
 npm run build      # 型チェック + 本番ビルド（dist/）
 ```
 
+## ページ構成（マルチページ）
+
+| URL | ファイル | 内容 |
+| --- | --- | --- |
+| `/` | `index.html` | トップページ |
+| `/editor/` | `editor/index.html` | 間取り作成アプリ（`?template=ID` でテンプレートを開く） |
+| `/guide/` | `guide/index.html` | 使い方ガイド |
+| `/templates/` | `templates/index.html` | 間取りテンプレート |
+| `/articles/...` | `articles/*/index.html` | コラム |
+| `/privacy/` `/terms/` `/contact/` | | プライバシーポリシー・利用規約・お問い合わせ |
+
+- コンテンツページは静的 HTML（検索エンジン向け）。共通ヘッダー・フッター・広告枠は `src/site/layout.ts` で定義し、
+  ビルド時に `<!--site:header-->` などの目印へ埋め込む（`vite.config.ts` の `sitePlugin`）。
+- テンプレートのサムネイル（`public/templates/*.svg`）は `npm run gen:assets` で生成。テンプレートを変えたら再生成する。
+- `robots.txt` は常に、`sitemap.xml`・canonical・OGP の URL は `VITE_SITE_URL` 設定時に出力。
+
+## 公開前に設定・記入が必要なもの
+
+`.env.example` を `.env` にコピーして設定する。
+
+| 項目 | 内容 |
+| --- | --- |
+| `VITE_SITE_URL` | 公開 URL。canonical・OGP・sitemap.xml に使用 |
+| `VITE_ADSENSE_CLIENT` / `VITE_ADSENSE_SLOT` | AdSense の ID。未設定の間は広告枠は表示されない（キャンバス内には出さない） |
+| `VITE_CONTACT_EMAIL` | お問い合わせ送信先。未設定の間はフォームが「準備中」表示 |
+| 利用規約・プライバシーポリシー | 【運営者名】【公開日】【管轄裁判所】を記入。公開前に専門家の確認を推奨 |
+
 ## 技術構成
 
 - React + TypeScript + Vite
@@ -32,7 +59,7 @@ npm run build      # 型チェック + 本番ビルド（dist/）
 
 ## データ設計の要点
 
-- 単位はすべて mm。グリッドは半間 455mm（設定で変更可）。1畳 = 1.62㎡（不動産表示規約）。
+- 単位はすべて mm。グリッドは 455mm（半間 910mm の半分。設定で変更可）。1畳 = 1.62㎡（不動産表示規約）。
 - **部屋**は矩形（`x, y, w, h`）。`type`（種類）と `style`（色・床模様・設備表示）は独立。
 - **壁**は部屋の辺から自動算出（`computeWalls`）。同一直線上で重なる辺は 1 本に統合されるため共通壁は二重にならず、
   サイズ変更・削除のたびに再計算される。保存ファイルには `derived.walls / connections` として出力（3D 化など外部利用向け）。

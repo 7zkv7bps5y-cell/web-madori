@@ -134,9 +134,9 @@ export interface Floor {
 export type AreaUnit = 'tatami' | 'm2' | 'tsubo';
 
 export interface ProjectSettings {
-  /** スナップ用グリッド(mm)。標準は半間 455mm */
+  /** スナップ用グリッド(mm)。標準は 455mm（半間 910mm の半分 = 1.5尺） */
   gridSize: Mm;
-  /** 表示用の主グリッド(mm)。標準は 1 間 910mm */
+  /** 表示用の主グリッド(mm)。標準は半間 910mm（3尺。木造住宅の基本モジュール） */
   majorGridSize: Mm;
   areaUnit: AreaUnit;
   /** 1畳あたりの面積(㎡)。不動産表示規約の 1.62㎡ が標準 */

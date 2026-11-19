@@ -30,6 +30,7 @@ function build(name: string, roomSpecs: RoomSpec[], openingSpecs: OpeningSpec[],
 
 export interface TemplateDef {
   id: string;
+  /** 間取りタイプ（例: 2LDK） */
   name: string;
   description: string;
   create: () => Project;
@@ -37,8 +38,79 @@ export interface TemplateDef {
 
 export const TEMPLATES: TemplateDef[] = [
   {
+    id: '1k',
+    name: '1K',
+    description: '一人暮らし向け。洋室とキッチン・水回りがまとまったコンパクトな間取り',
+    create: () =>
+      build(
+        '1K サンプル',
+        [
+          ['room', 'room', 0, 0, 3640, 3640],
+          ['kitchen', 'kitchen', 0, 3640, 2275, 2730, 270],
+          ['bath', 'bath', 2275, 3640, 1365, 1820, 90],
+          ['toilet', 'toilet', 2275, 5460, 1365, 910, 90],
+          ['entrance', 'entrance', 0, 6370, 1820, 1365],
+        ],
+        [
+          ['entrance', 'entranceDoor', 'bottom', 455, 910, 'out'],
+          ['entrance', 'door', 'top', 520, 780],
+          ['kitchen', 'door', 'top', 1100, 780, 'out'],
+          ['bath', 'door', 'left', 520, 780, 'out'],
+          ['toilet', 'door', 'left', 65, 780, 'out'],
+          ['room', 'floorWindow', 'top', 995, 1650],
+          ['room', 'window', 'right', 1365, 910],
+          ['bath', 'window', 'right', 455, 910],
+        ],
+        [
+          ['bed-single', 2590, 2600, 90],
+          ['desk', 375, 1500, 270],
+          ['fridge', 975, 5970, 180],
+        ],
+      ),
+  },
+  {
+    id: '1ldk',
+    name: '1LDK',
+    description: '二人暮らしにも。LDKの隣に寝室、水回りは廊下からアクセス',
+    create: () =>
+      build(
+        '1LDK サンプル',
+        [
+          ['ldk', 'ldk', 0, 0, 5460, 3640],
+          ['bedroom', 'bedroom', 5460, 0, 3640, 3640],
+          ['entrance', 'entrance', 0, 3640, 1820, 1820],
+          ['hall', 'hall', 1820, 3640, 910, 1820],
+          ['dressing', 'dressing', 2730, 3640, 1820, 1820],
+          ['bath', 'bath', 4550, 3640, 1820, 1820, 90],
+          ['toilet', 'toilet', 1820, 5460, 910, 1365, 180],
+          ['closet', 'closet', 6370, 3640, 1820, 1820],
+        ],
+        [
+          ['entrance', 'entranceDoor', 'left', 455, 910, 'out'],
+          ['entrance', 'door', 'right', 520, 780, 'out'],
+          ['hall', 'door', 'top', 65, 780, 'out'],
+          ['hall', 'door', 'bottom', 65, 780, 'out'],
+          ['dressing', 'door', 'left', 520, 780],
+          ['bath', 'door', 'left', 520, 780, 'out'],
+          ['bedroom', 'door', 'left', 2600, 780],
+          ['closet', 'slidingDoor', 'top', 180, 1460, 'in'],
+          ['ldk', 'floorWindow', 'top', 455, 1650],
+          ['ldk', 'window', 'left', 1365, 910],
+          ['bedroom', 'largeWindow', 'top', 995, 1650],
+          ['bedroom', 'window', 'right', 1365, 910],
+        ],
+        [
+          ['sofa', 500, 2200, 270],
+          ['table', 1300, 2200, 90],
+          ['dining-table', 3900, 2200],
+          ['fridge', 2585, 425],
+          ['bed-double', 7280, 1050],
+        ],
+      ),
+  },
+  {
     id: '2ldk-flat',
-    name: '平屋 2LDK',
+    name: '2LDK（平屋）',
     description: 'LDK・和室・寝室と水回りがそろった平屋の例',
     create: () =>
       build(
@@ -80,6 +152,53 @@ export const TEMPLATES: TemplateDef[] = [
           ['fridge', 425, 2665, 90],
           ['bed-double', 6370, 5575],
           ['aircon', 6370, 4725],
+        ],
+      ),
+  },
+  {
+    id: '4ldk',
+    name: '4LDK',
+    description: 'ファミリー向け。広めのLDKに和室がつながり、洋室3つと水回りを廊下でつなぐ',
+    create: () =>
+      build(
+        '4LDK サンプル',
+        [
+          ['ldk', 'ldk', 0, 0, 5460, 4550],
+          ['washitsu', 'washitsu', 5460, 0, 2730, 3640],
+          ['bedroom', 'bedroom', 5460, 3640, 2730, 3640],
+          ['hall', 'hall', 2730, 4550, 910, 3640],
+          ['kidsA', 'kids', 0, 4550, 2730, 2730],
+          ['kidsB', 'room', 0, 7280, 2730, 2730],
+          ['dressing', 'dressing', 3640, 4550, 1820, 1820],
+          ['bath', 'bath', 3640, 6370, 1820, 1820, 180],
+          ['entrance', 'entrance', 2730, 8190, 1820, 1820],
+          ['toilet', 'toilet', 4550, 8190, 910, 1820, 90],
+        ],
+        [
+          ['entrance', 'entranceDoor', 'bottom', 455, 910, 'out'],
+          ['hall', 'door', 'top', 65, 780, 'out'],
+          ['washitsu', 'slidingDoor', 'left', 1800, 1460],
+          ['bedroom', 'door', 'left', 100, 780],
+          ['kidsA', 'door', 'right', 1100, 780],
+          ['kidsB', 'door', 'right', 100, 780],
+          ['dressing', 'door', 'left', 520, 780],
+          ['bath', 'door', 'top', 520, 780, 'out'],
+          ['toilet', 'door', 'left', 520, 780, 'out'],
+          ['ldk', 'floorWindow', 'top', 455, 1650],
+          ['ldk', 'window', 'left', 1820, 910],
+          ['washitsu', 'largeWindow', 'top', 540, 1650],
+          ['bedroom', 'window', 'right', 1365, 910],
+          ['kidsA', 'window', 'left', 910, 910],
+          ['kidsB', 'window', 'left', 910, 910],
+        ],
+        [
+          ['sofa', 500, 2600, 270],
+          ['table', 1300, 2600, 90],
+          ['dining-table', 3900, 2500],
+          ['fridge', 2585, 425],
+          ['bed-double', 7100, 4665],
+          ['bed-single', 1050, 5300, 270],
+          ['desk', 1980, 8800, 90],
         ],
       ),
   },

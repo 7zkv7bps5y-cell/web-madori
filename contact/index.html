@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>お問い合わせ｜Web間取り</title>
+    <meta name="description" content="Web間取りへのお問い合わせ、不具合のご報告、提携のご相談はこちらから。" />
+    <meta name="theme-color" content="#1f7a63" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="Web間取り" />
+    <meta property="og:title" content="お問い合わせ｜Web間取り" />
+    <meta property="og:description" content="Web間取りへのお問い合わせ、不具合のご報告、提携のご相談はこちらから。" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="module" src="/src/site/site.ts"></script>
+  </head>
+  <body>
+    <!--site:header-->
+    <main>
+      <div class="doc">
+        <p class="breadcrumb"><a href="/">トップ</a> › お問い合わせ</p>
+        <h1>お問い合わせ</h1>
+        <p>Web間取りへのご意見・不具合のご報告・提携のご相談などは、こちらからお寄せください。内容によってはお返事できない場合や、お時間をいただく場合があります。</p>
+        <p class="note">作成した間取りデータは、ご自身で保存・管理していただく仕組みです。運営者が個別の間取りを復元することはできません。</p>
+        <form id="contact-form" class="form">
+          <label>お問い合わせの種類
+            <select name="category">
+              <option>使い方について</option>
+              <option>不具合の報告</option>
+              <option>機能の要望</option>
+              <option>広告・提携について</option>
+              <option>その他</option>
+            </select>
+          </label>
+          <label>お名前（任意）<input name="name" autocomplete="name" maxlength="60" /></label>
+          <label>返信先メールアドレス<input name="email" type="email" autocomplete="email" required maxlength="120" /></label>
+          <label>内容<textarea name="message" required maxlength="4000"></textarea></label>
+          <p class="muted" style="margin:0;font-size:14px">送信いただいた情報は<a href="/privacy/">プライバシーポリシー</a>に従って取り扱います。</p>
+          <button class="btn primary" type="submit">メールアプリで送信する</button>
+          <p id="contact-status" role="status"></p>
+        </form>
+      </div>
+    </main>
+    <!--site:footer-->
+  </body>
+</html>
