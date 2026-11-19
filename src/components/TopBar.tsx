@@ -9,6 +9,8 @@ export interface ProjectActions {
   copyJson: () => void;
   pasteJson: () => void;
   exportImage: () => void;
+  exportPdf: () => void;
+  shareUrl: () => void;
   openTemplate: () => void;
   openPlans: () => void;
 }
@@ -114,6 +116,12 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
       <hr />
       <button role="menuitem" type="button" onClick={actions.exportImage}>
         画像（PNG）で保存…
+      </button>
+      <button role="menuitem" type="button" onClick={actions.exportPdf}>
+        PDFで保存（印刷用）…
+      </button>
+      <button role="menuitem" type="button" onClick={actions.shareUrl}>
+        共有用URLを作成…
       </button>
       <button role="menuitem" type="button" onClick={actions.copyJson}>
         間取りデータをコピー

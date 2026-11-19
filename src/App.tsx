@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { AddRoomDialog } from './components/AddRoomDialog';
 import { Canvas } from './components/Canvas';
-import { ExportImageDialog, TextTransferDialog } from './components/Dialogs';
+import { ExportImageDialog, ExportPdfDialog, ShareDialog, TextTransferDialog } from './components/Dialogs';
+import { decodeShare, shareTokenFromHash } from './utils/share';
 import { Palette } from './components/Palette';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { FloorTabs } from './components/FloorTabs';
@@ -177,6 +178,8 @@ export default function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const [plansOpen, setPlansOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const mode = useStore((s) => s.mode);
   const [transfer, setTransfer] = useState<{ mode: 'copy' | 'paste'; text?: string } | null>(null);
   const [saveState, setSaveState] = useState('');
@@ -197,7 +200,17 @@ export default function App() {
     } else if (params.has('new') && saved && saved.rooms.length > 0) {
       useStore.getState().newProject();
     }
-    if (params.toString()) window.history.replaceState(null, '', window.location.pathname);
+    // 共有URL（#p=...）で開いた場合は、その間取りのコピーを開く
+    const token = shareTokenFromHash(window.location.hash);
+    if (token) {
+      decodeShare(token).then((r) => {
+        if (!r.ok) return useStore.getState().notify(r.error, 'error');
+        useStore.getState().loadProject(r.project, !!saved);
+        useView.getState().requestFit();
+        useStore.getState().notify(`共有された間取り「${r.project.projectName}」を開きました。${saved ? '（元に戻すで前の間取りに戻せます）' : ''}`);
+      });
+    }
+    if (params.toString() || window.location.hash) window.history.replaceState(null, '', window.location.pathname);
     useView.getState().requestFit();
     initAds();
   }, []);
@@ -251,6 +264,8 @@ export default function App() {
     },
     exportImage: () => setExportOpen(true),
     openPlans: () => setPlansOpen(true),
+    exportPdf: () => setPdfOpen(true),
+    shareUrl: () => setShareOpen(true),
   };
 
   // キーボードショートカット
@@ -402,6 +417,8 @@ export default function App() {
           }}
         />
       )}
+      {pdfOpen && <ExportPdfDialog onClose={() => setPdfOpen(false)} />}
+      {shareOpen && <ShareDialog onClose={() => setShareOpen(false)} />}
       {plansOpen && <PlansDialog onClose={() => setPlansOpen(false)} />}
       {exportOpen && <ExportImageDialog onClose={() => setExportOpen(false)} />}
       {transfer && <TextTransferDialog mode={transfer.mode} text={transfer.text} onClose={() => setTransfer(null)} />}

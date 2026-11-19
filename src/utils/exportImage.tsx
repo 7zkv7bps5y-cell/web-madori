@@ -16,6 +16,8 @@ export interface ImageOptions {
   showFurniture: boolean;
   /** active = 編集中の階のみ / all = 全階を横に並べる */
   floors: 'active' | 'all';
+  /** 右上に添える注記（例: 縮尺 1/100） */
+  caption?: string;
 }
 
 export const DEFAULT_IMAGE_OPTIONS: ImageOptions = {
@@ -93,7 +95,10 @@ export function FloorsDrawing({
 }
 
 /** 間取りを単独の SVG 文字列として生成する（PNG・PDF 出力の元データ） */
-export async function buildSvg(project: Project, opts: ImageOptions): Promise<{ svg: string; width: number; height: number }> {
+export async function buildSvg(
+  project: Project,
+  opts: ImageOptions,
+): Promise<{ svg: string; width: number; height: number; scale: number; box: { w: number; h: number } }> {
   const { renderToStaticMarkup } = await import('react-dom/server');
   const layout = layoutFloors(project, opts.floors);
   const b = layout.bounds;
@@ -136,15 +141,21 @@ export async function buildSvg(project: Project, opts: ImageOptions): Promise<{ 
             <text x={500} y={-60} fontSize={160} textAnchor="middle">
               1m
             </text>
+            {opts.caption && (
+              <text x={1000} y={260} fontSize={170} textAnchor="end">
+                {opts.caption}
+              </text>
+            )}
           </g>
         </g>
       )}
     </svg>,
   );
-  return { svg: markup, width, height };
+  return { svg: markup, width, height, scale, box: { w: box.w, h: box.h } };
 }
 
-export async function renderPng(project: Project, opts: ImageOptions): Promise<Blob> {
+/** SVG をキャンバスに描画する（PNG・PDF 用） */
+export async function renderCanvas(project: Project, opts: ImageOptions): Promise<HTMLCanvasElement> {
   const { svg, width, height } = await buildSvg(project, opts);
   const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
   try {
@@ -161,12 +172,17 @@ export async function renderPng(project: Project, opts: ImageOptions): Promise<B
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('この環境では画像を生成できません。');
     ctx.drawImage(img, 0, 0, width, height);
-    return await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('画像の生成に失敗しました。'))), 'image/png'),
-    );
+    return canvas;
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+export async function renderPng(project: Project, opts: ImageOptions): Promise<Blob> {
+  const canvas = await renderCanvas(project, opts);
+  return await new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('画像の生成に失敗しました。'))), 'image/png'),
+  );
 }
 
 export async function exportPng(project: Project, opts: ImageOptions) {
