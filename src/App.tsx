@@ -4,6 +4,7 @@ import { Canvas } from './components/Canvas';
 import { ExportImageDialog, TextTransferDialog } from './components/Dialogs';
 import { Palette } from './components/Palette';
 import { PropertiesPanel } from './components/PropertiesPanel';
+import { FloorTabs } from './components/FloorTabs';
 import { PlansDialog } from './components/PlansDialog';
 import { TemplatesDialog } from './components/TemplatesDialog';
 import { initAds } from './site/ads';
@@ -82,7 +83,9 @@ function PlacementBanner() {
 }
 
 function EmptyState({ onTemplate }: { onTemplate: () => void }) {
-  const count = useStore((s) => s.project.rooms.length);
+  const count = useStore((s) => s.project.rooms.filter((r) => r.floorId === s.project.settings.activeFloorId).length);
+  const floorName = useStore((s) => s.project.floors.find((f) => f.id === s.project.settings.activeFloorId)?.name ?? '');
+  const hasOtherFloors = useStore((s) => s.project.rooms.length > 0);
   const open = useStore((s) => s.openAddDialog);
   const mode = useStore((s) => s.mode);
   const setMode = useStore((s) => s.setMode);
@@ -105,17 +108,28 @@ function EmptyState({ onTemplate }: { onTemplate: () => void }) {
   return (
     <div className="empty">
       <div className="empty-card">
-        <h2>間取りづくりを始めましょう</h2>
-        <p>
-          最初の部屋を置いたら、部屋を選んで上下左右の <b>＋</b> を押すだけで部屋を増やせます。
-        </p>
+        {hasOtherFloors ? (
+          <>
+            <h2>{floorName}の間取りを作りましょう</h2>
+            <p>下の階を薄く表示しています。階段の位置を下の階と合わせると、上下の階がつながります。</p>
+          </>
+        ) : (
+          <>
+            <h2>間取りづくりを始めましょう</h2>
+            <p>
+              最初の部屋を置いたら、部屋を選んで上下左右の <b>＋</b> を押すだけで部屋を増やせます。
+            </p>
+          </>
+        )}
         <div className="modal-actions center">
           <button type="button" className="primary" onClick={() => open({ baseId: null, dir: null })}>
             ＋ 最初の部屋を追加
           </button>
-          <button type="button" onClick={onTemplate}>
-            テンプレートから始める
-          </button>
+          {!hasOtherFloors && (
+            <button type="button" onClick={onTemplate}>
+              テンプレートから始める
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -302,6 +316,7 @@ export default function App() {
         <section className="stage">
           <Canvas touchUi={coarse || mobile} />
           <PlacementBanner />
+          <FloorTabs />
           <EmptyState onTemplate={actions.openTemplate} />
           <ZoomControls />
         </section>

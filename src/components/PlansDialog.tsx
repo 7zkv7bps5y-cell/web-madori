@@ -1,5 +1,4 @@
 import { useMemo } from 'react';
-import { boundsOf } from '../model/geometry';
 import { materializePlan, MAX_PLANS } from '../model/project';
 import { planStats } from '../model/stats';
 import type { Project } from '../model/types';
@@ -8,22 +7,17 @@ import { useStore } from '../store/store';
 import { useView } from '../store/view';
 import { Modal } from './Dialogs';
 import { TextField } from './fields';
-import { FurnitureLayer } from './plan/FurnitureShape';
-import { PlanDrawing } from './plan/PlanDrawing';
+import { FloorsDrawing, layoutFloors } from '../utils/exportImage';
 
+/** 案のサムネイル（複数階なら全階を横に並べる） */
 export function PlanThumbnail({ project, prefix }: { project: Project; prefix: string }) {
-  const floorId = project.settings.activeFloorId;
-  const b = boundsOf(project.rooms.filter((r) => r.floorId === floorId));
-  if (!b) return <div className="thumb empty-thumb">部屋がありません</div>;
+  if (project.rooms.length === 0) return <div className="thumb empty-thumb">部屋がありません</div>;
+  const { bounds: b, items } = layoutFloors(project, 'all');
   const m = 600;
+  const top = items.length > 1 ? 700 : 0;
   return (
-    <svg className="thumb" viewBox={`${b.x - m} ${b.y - m} ${b.w + m * 2} ${b.h + m * 2}`} role="img" aria-label="間取りのプレビュー">
-      <PlanDrawing
-        project={project}
-        floorId={floorId}
-        idPrefix={prefix}
-        overlay={<FurnitureLayer items={project.furniture.filter((f) => f.floorId === floorId)} />}
-      />
+    <svg className="thumb" viewBox={`${b.x - m} ${b.y - m - top} ${b.w + m * 2} ${b.h + m * 2 + top}`} role="img" aria-label="間取りのプレビュー">
+      <FloorsDrawing project={project} mode="all" idPrefix={prefix} />
     </svg>
   );
 }
@@ -61,7 +55,13 @@ export function PlansDialog({ onClose }: { onClose: () => void }) {
                 <dd>{stats.layout}</dd>
                 <dt>部屋数</dt>
                 <dd>{stats.roomCount}</dd>
-                <dt>床面積</dt>
+                {stats.floors.length > 1 && (
+                  <>
+                    <dt>階</dt>
+                    <dd>{stats.floors.map((f) => `${f.name} ${formatArea(f.area, 'm2')}`).join(' / ')}</dd>
+                  </>
+                )}
+                <dt>{stats.floors.length > 1 ? '延床面積' : '床面積'}</dt>
                 <dd>
                   {formatArea(stats.totalArea, 'm2')}
                   {unit !== 'm2' && `（${formatArea(stats.totalArea, unit, project.settings.tatamiArea)}）`}

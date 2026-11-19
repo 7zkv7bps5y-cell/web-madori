@@ -33,7 +33,12 @@ export const ROOM_TYPE_DEFS: RoomTypeDef[] = [
   { type: 'hall', label: '廊下', group: 'other', fill: '#f5f1e8', floor: 'flooring', w: 910, h: 2730 },
   { type: 'entrance', label: '玄関', group: 'other', fill: '#e9e6e1', floor: 'tile', w: 1820, h: 1820 },
   { type: 'stairs', label: '階段', group: 'other', fill: '#f2eee6', floor: 'none', w: 910, h: 2730 },
+  { type: 'balcony', label: 'バルコニー', group: 'other', fill: '#eceae4', floor: 'tile', w: 3640, h: 910 },
 ];
+
+/** 延床面積・間取りタイプに含めない部屋（バルコニーなど屋外） */
+export const OUTDOOR_TYPES: RoomType[] = ['balcony'];
+export const isOutdoor = (type: RoomType) => OUTDOOR_TYPES.includes(type);
 
 const ROOM_MAP = new Map(ROOM_TYPE_DEFS.map((d) => [d.type, d]));
 export function roomDef(type: RoomType): RoomTypeDef {

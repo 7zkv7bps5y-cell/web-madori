@@ -14,6 +14,7 @@ export async function renderTemplateAssets() {
       showFixtures: true,
       showTitle: false,
       showFurniture: true,
+      floors: 'all',
     });
     out.push({ id: t.id, name: t.name, description: t.description, area: planStats(p).totalArea, svg });
   }

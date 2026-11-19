@@ -27,6 +27,7 @@ import type { Furniture, Project, Rect, RoomType, Side } from '../model/types';
 import { formatMm } from '../model/units';
 import { activeRooms, useStore } from '../store/store';
 import { clampZoom, useView } from '../store/view';
+import { floorBelow } from '../model/project';
 import { FurnitureLayer } from './plan/FurnitureShape';
 import { PlanDrawing } from './plan/PlanDrawing';
 
@@ -135,7 +136,7 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
   const tool = useStore((s) => s.tool);
   const mode = useStore((s) => s.mode);
   const [hoverRoomId, setHoverRoomId] = useState<string | null>(null);
-  const { zoom, panX, panY, width, height, fitSeq, showDims, showFlow } = useView();
+  const { zoom, panX, panY, width, height, fitSeq, showDims, showFlow, showBelow } = useView();
   const setView = useView((s) => s.set);
   const gesture = useRef<Gesture | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -160,7 +161,9 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
   // 全体表示
   const fit = useCallback(() => {
     const { width: vw, height: vh } = useView.getState();
-    const b = boundsOf(activeRooms(useStore.getState().project));
+    const prj = useStore.getState().project;
+    // 編集中の階が空なら、他の階（下の階）の範囲を表示
+    const b = boundsOf(activeRooms(prj)) ?? boundsOf(prj.rooms);
     const margin = 1800;
     const box = b
       ? { x: b.x - margin, y: b.y - margin, w: b.w + margin * 2, h: b.h + margin * 2 }
@@ -573,6 +576,7 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
 
   // ---- 表示 ----
   const planMode = mode === 'plan';
+  const below = floorBelow(project);
   const selRoom = planMode && selection?.kind === 'room' ? rooms.find((r) => r.id === selection.id) : undefined;
   const selFurniture =
     !planMode && selection?.kind === 'furniture' ? project.furniture.find((f) => f.id === selection.id) : undefined;
@@ -640,6 +644,12 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
         {showMinor && <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill="url(#grid-minor)" />}
         <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill="url(#grid-major)" />
 
+        {/* 下の階を薄く表示（上下の階の位置合わせ用） */}
+        {below && showBelow && (
+          <g opacity={0.25} pointerEvents="none">
+            <PlanDrawing project={project} floorId={below.id} showFixtures={false} idPrefix="below-" />
+          </g>
+        )}
         <PlanDrawing
           project={project}
           floorId={floorId}

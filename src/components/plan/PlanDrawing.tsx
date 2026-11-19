@@ -3,9 +3,11 @@ import { openingDef, roomDef } from '../../model/catalog';
 import { computeWalls, EPS, openingGeom, type OpeningGeom } from '../../model/geometry';
 import type { Opening, Project, Room, WallSegment } from '../../model/types';
 import { areaM2, formatArea } from '../../model/units';
+import { wallKind, wallThicknessOf } from '../../model/collision';
 import { fixtureDepth, localSize, localToWorld, RoomFixtures } from './Fixtures';
 
 const WALL_COLOR = '#3b3833';
+const RAILING_COLOR = '#9b958a';
 const LINE = '#3b3833';
 
 export function resolveFloor(room: Room) {
@@ -111,15 +113,14 @@ interface PlacedOpening {
   thickness: number;
 }
 
-function wallThickness(w: WallSegment, p: Project) {
-  return w.exterior ? p.settings.exteriorWallThickness : p.settings.interiorWallThickness;
-}
+const wallThickness = wallThicknessOf;
 
 /** 壁を開口部の位置で切り分け、太線（矩形）として描画する */
 function Walls({ walls, openings, project }: { walls: WallSegment[]; openings: PlacedOpening[]; project: Project }) {
   const rects: ReactElement[] = [];
   for (const w of walls) {
     const t = wallThickness(w, project);
+    const color = wallKind(w, project) === 'railing' ? RAILING_COLOR : WALL_COLOR;
     const cuts = openings
       .filter((o) => o.g.orientation === w.orientation && Math.abs(o.g.pos - w.pos) < EPS)
       .map((o) => [Math.max(o.g.start, w.start), Math.min(o.g.end, w.end)] as const)
@@ -139,9 +140,9 @@ function Walls({ walls, openings, project }: { walls: WallSegment[]; openings: P
       const e = b + (ee ? t / 2 : 0);
       rects.push(
         w.orientation === 'h' ? (
-          <rect key={`${w.id}-${i}`} x={s} y={w.pos - t / 2} width={e - s} height={t} fill={WALL_COLOR} />
+          <rect key={`${w.id}-${i}`} x={s} y={w.pos - t / 2} width={e - s} height={t} fill={color} />
         ) : (
-          <rect key={`${w.id}-${i}`} x={w.pos - t / 2} y={s} width={t} height={e - s} fill={WALL_COLOR} />
+          <rect key={`${w.id}-${i}`} x={w.pos - t / 2} y={s} width={t} height={e - s} fill={color} />
         ),
       );
     });

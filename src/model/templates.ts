@@ -1,4 +1,4 @@
-import { createFurniture, createOpening, createProject, createRoom } from './project';
+import { addFloor, createFurniture, createOpening, createProject, createRoom } from './project';
 import type { Opening, OpeningType, Project, Room, RoomType, Side } from './types';
 
 type RoomSpec = [key: string, type: RoomType, x: number, y: number, w: number, h: number, rotation?: Room['rotation']];
@@ -6,26 +6,45 @@ type OpeningSpec = [roomKey: string, type: OpeningType, side: Side, offset: numb
 
 type FurnitureSpec = [type: string, x: number, y: number, rotation?: number];
 
-function build(name: string, roomSpecs: RoomSpec[], openingSpecs: OpeningSpec[], furnitureSpecs: FurnitureSpec[] = []): Project {
-  const p = createProject(name);
-  const floorId = p.settings.activeFloorId;
+interface FloorSpec {
+  rooms: RoomSpec[];
+  openings: OpeningSpec[];
+  furniture?: FurnitureSpec[];
+}
+
+function fillFloor(p: Project, floorId: string, spec: FloorSpec) {
   const keys = new Map<string, Room>();
-  for (const [key, type, x, y, w, h, rotation = 0] of roomSpecs) {
+  for (const [key, type, x, y, w, h, rotation = 0] of spec.rooms) {
     const room = { ...createRoom(type, { x, y, w, h }, floorId), rotation };
     keys.set(key, room);
     p.rooms.push(room);
   }
-  for (const [key, type, side, offset, width, swing, hinge] of openingSpecs) {
+  for (const [key, type, side, offset, width, swing, hinge] of spec.openings) {
     const room = keys.get(key)!;
     const o = createOpening(type, { roomId: room.id, side, offset, width }, floorId);
     if (swing) o.swing = swing;
     if (hinge) o.hinge = hinge;
     p.openings.push(o);
   }
-  for (const [type, x, y, rotation = 0] of furnitureSpecs) {
+  for (const [type, x, y, rotation = 0] of spec.furniture ?? []) {
     p.furniture.push({ ...createFurniture(type, { x, y }, floorId), rotation });
   }
-  return p;
+}
+
+/** 複数階の間取り（floors[0] が 1 階） */
+function buildFloors(name: string, floors: FloorSpec[]): Project {
+  let p = createProject(name);
+  const first = p.settings.activeFloorId;
+  fillFloor(p, first, floors[0]);
+  for (const spec of floors.slice(1)) {
+    p = addFloor(p);
+    fillFloor(p, p.settings.activeFloorId, spec);
+  }
+  return { ...p, settings: { ...p.settings, activeFloorId: first } };
+}
+
+function build(name: string, roomSpecs: RoomSpec[], openingSpecs: OpeningSpec[], furnitureSpecs: FurnitureSpec[] = []): Project {
+  return buildFloors(name, [{ rooms: roomSpecs, openings: openingSpecs, furniture: furnitureSpecs }]);
 }
 
 export interface TemplateDef {
@@ -201,5 +220,71 @@ export const TEMPLATES: TemplateDef[] = [
           ['desk', 2380, 8800, 90],
         ],
       ),
+  },
+  {
+    id: '4ldk-2f',
+    name: '4LDK（2階建て）',
+    description: '1階にLDKと和室・水回り、2階に個室3つとバルコニー。階段とトイレの位置を上下で揃えた例',
+    create: () =>
+      buildFloors('2階建て 4LDK サンプル', [
+        {
+          rooms: [
+            ['ldk', 'ldk', 0, 0, 5460, 4550],
+            ['washitsu', 'washitsu', 5460, 0, 2730, 3640],
+            ['hall', 'hall', 1820, 4550, 2730, 910],
+            ['dressing', 'dressing', 0, 4550, 1820, 1820],
+            ['bath', 'bath', 0, 6370, 1820, 1820, 180],
+            ['stairs', 'stairs', 1820, 5460, 910, 2730],
+            ['toilet', 'toilet', 2730, 5460, 910, 1820, 180],
+            ['entrance', 'entrance', 3640, 5460, 1820, 1820],
+          ],
+          openings: [
+            ['entrance', 'entranceDoor', 'bottom', 455, 910, 'out'],
+            ['entrance', 'door', 'top', 65, 780, 'out'],
+            ['hall', 'door', 'top', 1300, 780, 'out'],
+            ['dressing', 'door', 'right', 65, 780],
+            ['bath', 'door', 'top', 520, 780, 'out'],
+            ['toilet', 'door', 'top', 65, 780, 'out'],
+            ['washitsu', 'slidingDoor', 'left', 1800, 1460],
+            ['ldk', 'floorWindow', 'top', 455, 1650],
+            ['ldk', 'window', 'left', 1820, 910],
+            ['washitsu', 'largeWindow', 'top', 540, 1650],
+            ['bath', 'window', 'left', 455, 910],
+          ],
+          furniture: [
+            ['sofa', 500, 2600, 270],
+            ['table', 1300, 2600, 90],
+            ['dining-table', 3900, 2700],
+            ['fridge', 2585, 425],
+          ],
+        },
+        {
+          rooms: [
+            ['balcony', 'balcony', 0, -1365, 6370, 1365],
+            ['bedroom', 'bedroom', 0, 0, 3640, 4550],
+            ['kids', 'kids', 3640, 0, 2730, 4550],
+            ['hall', 'hall', 1820, 4550, 2730, 910],
+            ['roomB', 'room', 0, 4550, 1820, 3640],
+            ['stairs', 'stairs', 1820, 5460, 910, 2730],
+            ['toilet', 'toilet', 2730, 5460, 910, 1820, 180],
+          ],
+          openings: [
+            ['bedroom', 'door', 'bottom', 2000, 780],
+            ['kids', 'door', 'bottom', 100, 780],
+            ['roomB', 'door', 'right', 65, 780],
+            ['toilet', 'door', 'top', 65, 780, 'out'],
+            ['bedroom', 'floorWindow', 'top', 995, 1650],
+            ['kids', 'floorWindow', 'top', 540, 1650],
+            ['bedroom', 'window', 'left', 1820, 910],
+            ['roomB', 'window', 'left', 1365, 910],
+          ],
+          furniture: [
+            ['bed-double', 1820, 1050],
+            ['bed-single', 5320, 2500, 90],
+            ['desk', 3990, 1200, 270],
+            ['bed-single', 910, 7140, 180],
+          ],
+        },
+      ]),
   },
 ];

@@ -10,6 +10,8 @@ import {
 import { computeConnections, computeWalls, edgeLength } from '../model/geometry';
 import { FLOOR_PATTERNS, type AreaUnit, type FloorPattern, type Opening, type Room, type Side } from '../model/types';
 import { areaM2, formatArea, sizeFromTatami, tatamiFromSize } from '../model/units';
+import { floorArea } from '../model/stats';
+import { useView } from '../store/view';
 import { activeRooms, useStore } from '../store/store';
 import { NumberField, Segmented, TextField, toUnit, UNIT_FACTOR, type LengthUnit } from './fields';
 import { FurnitureProps, FurnitureSummary } from './FurniturePanel';
@@ -286,8 +288,12 @@ function ProjectProps() {
   const project = useStore((s) => s.project);
   const st = useStore.getState();
   const rooms = activeRooms(project);
-  const total = rooms.reduce((s, r) => s + areaM2(r.w, r.h), 0);
+  const total = floorArea(rooms);
+  const grand = floorArea(project.rooms);
   const { settings } = project;
+  const floor = project.floors.find((f) => f.id === settings.activeFloorId);
+  const multi = project.floors.length > 1;
+  const showBelow = useView((s) => s.showBelow);
   return (
     <div className="props">
       <h2>間取り全体</h2>
@@ -297,12 +303,49 @@ function ProjectProps() {
           <strong>{rooms.length}</strong>
         </div>
         <div>
-          <span className="muted small">床面積（部屋の合計）</span>
+          <span className="muted small">{multi ? `${floor?.name ?? ''}の床面積` : '床面積（部屋の合計）'}</span>
           <strong>
             {formatArea(total, 'm2')}（{formatArea(total, 'tsubo')}）
           </strong>
         </div>
+        {multi && (
+          <div>
+            <span className="muted small">延床面積（全階の合計）</span>
+            <strong>
+              {formatArea(grand, 'm2')}（{formatArea(grand, 'tsubo')}）
+            </strong>
+          </div>
+        )}
       </div>
+      <p className="muted small">床面積は壁芯の目安で、バルコニーは含みません。</p>
+      {floor && (
+        <div className="props-group">
+          <h3>階の設定</h3>
+          <TextField label="階の名前" value={floor.name} maxLength={20} onCommit={(v) => st.renameFloor(floor.id, v)} />
+          {multi && (
+            <label className="check">
+              <input type="checkbox" checked={showBelow} onChange={(e) => useView.getState().set({ showBelow: e.target.checked })} />
+              下の階を薄く表示する
+            </label>
+          )}
+          <div className="actions">
+            <button type="button" onClick={() => st.addFloor() && useView.getState().requestFit()}>
+              ＋ 上の階を追加
+            </button>
+            {multi && (
+              <button
+                type="button"
+                className="danger"
+                onClick={() => {
+                  if (window.confirm(`${floor.name}を削除しますか？ この階の部屋・ドア・家具も削除されます（元に戻すで戻せます）。`)) st.deleteFloor(floor.id);
+                }}
+              >
+                🗑 この階を削除
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       <div className="field">
         <span className="field-label">広さの表示単位</span>
         <Segmented<AreaUnit>

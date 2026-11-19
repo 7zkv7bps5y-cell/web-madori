@@ -1,4 +1,4 @@
-import { openingDef } from './catalog';
+import { isOutdoor, openingDef } from './catalog';
 import { furnitureDef } from './furnitureCatalog';
 import { computeWalls, EPS, openingGeom } from './geometry';
 import type { Furniture, Project, Rect, Room, WallSegment } from './types';
@@ -63,8 +63,28 @@ export function polygonsIntersect(a: Vec[], b: Vec[]): boolean {
   return true;
 }
 
+export const RAILING_THICKNESS = 60;
+
+/**
+ * 壁の種類。屋外（バルコニー）だけに面する外周は手すり、屋内と屋外の境は外壁として扱う。
+ */
+export function wallKind(w: WallSegment, p: Project): 'exterior' | 'interior' | 'railing' {
+  const outdoor = w.rooms.map((r) => {
+    const room = p.rooms.find((x) => x.id === r.roomId);
+    return room ? isOutdoor(room.type) : false;
+  });
+  if (outdoor.length > 0 && outdoor.every(Boolean)) return w.exterior ? 'railing' : 'interior';
+  if (w.exterior || outdoor.some(Boolean)) return 'exterior';
+  return 'interior';
+}
+
 export function wallThicknessOf(w: WallSegment, p: Project): number {
-  return w.exterior ? p.settings.exteriorWallThickness : p.settings.interiorWallThickness;
+  const kind = wallKind(w, p);
+  return kind === 'railing'
+    ? RAILING_THICKNESS
+    : kind === 'exterior'
+      ? p.settings.exteriorWallThickness
+      : p.settings.interiorWallThickness;
 }
 
 /**

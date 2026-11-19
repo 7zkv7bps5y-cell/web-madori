@@ -234,3 +234,10 @@ textarea.transfer { min-height: 180px; font-family: ui-monospace, monospace; fon
 button.link { border: 0; background: none; padding: 0; min-height: 0; text-align: left; white-space: normal; text-decoration: underline; color: inherit; font-size: 13px; }
 .btn-group.wrap { flex-wrap: wrap; margin-top: 6px; }
 .small-btn { min-height: 30px; font-size: 12px; padding: 2px 10px; }
+.floor-tabs { position: absolute; left: 12px; top: 12px; display: flex; background: #fff; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.06); z-index: 5; }
+.floor-tabs button { border: 0; border-radius: 0; min-height: 34px; padding: 2px 12px; font-weight: 600; }
+.floor-tabs button + button { border-left: 1px solid var(--border); }
+.floor-tabs button.active { background: var(--accent); color: #fff; }
+.floor-tabs button.add { color: var(--accent); font-size: 13px; }
+.is-mobile .floor-tabs { left: 8px; top: 8px; }
+.is-mobile .floor-tabs button { min-height: 36px; padding: 2px 10px; }

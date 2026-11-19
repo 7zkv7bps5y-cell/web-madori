@@ -16,7 +16,9 @@ interface ViewState {
   showDims: boolean;
   /** 家具配置モード: 生活動線チェックの結果を図に表示 */
   showFlow: boolean;
-  set: (v: Partial<Pick<ViewState, 'zoom' | 'panX' | 'panY' | 'width' | 'height' | 'showDims' | 'showFlow'>>) => void;
+  /** 上の階を編集中、下の階を薄く表示する */
+  showBelow: boolean;
+  set: (v: Partial<Pick<ViewState, 'zoom' | 'panX' | 'panY' | 'width' | 'height' | 'showDims' | 'showFlow' | 'showBelow'>>) => void;
   zoomAt: (factor: number, sx?: number, sy?: number) => void;
   requestFit: () => void;
 }
@@ -32,6 +34,7 @@ export const useView = create<ViewState>((set, get) => ({
   fitSeq: 0,
   showDims: false,
   showFlow: true,
+  showBelow: true,
   set: (v) => set(v),
   zoomAt: (factor, sx, sy) => {
     const { zoom, panX, panY, width, height } = get();

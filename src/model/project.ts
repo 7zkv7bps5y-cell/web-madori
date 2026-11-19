@@ -461,3 +461,45 @@ export function serializeProject(p: Project, pretty = true): string {
 }
 
 export const PROJECT_EXTENSION = '.floorplan';
+
+// ---------------------------------------------------------------------------
+// 階（フロア）の操作
+// ---------------------------------------------------------------------------
+
+export const MAX_FLOORS = 4;
+
+export function sortedFloors(p: Pick<Project, 'floors'>) {
+  return [...p.floors].sort((a, b) => a.level - b.level);
+}
+
+/** 1 つ上の階を追加して編集中にする */
+export function addFloor(p: Project): Project {
+  if (p.floors.length >= MAX_FLOORS) return p;
+  const level = Math.max(...p.floors.map((f) => f.level)) + 1;
+  const floor = { id: uid('floor'), name: `${level}階`, level, height: 2400 };
+  return { ...p, floors: [...p.floors, floor], settings: { ...p.settings, activeFloorId: floor.id } };
+}
+
+/** 階を削除（その階の部屋・ドア・家具も削除）。最後の 1 階は削除できない */
+export function deleteFloor(p: Project, floorId: string): Project {
+  if (p.floors.length <= 1) return p;
+  const floors = p.floors.filter((f) => f.id !== floorId);
+  const active = p.settings.activeFloorId === floorId ? sortedFloors({ floors })[0].id : p.settings.activeFloorId;
+  return {
+    ...p,
+    floors,
+    rooms: p.rooms.filter((r) => r.floorId !== floorId),
+    openings: p.openings.filter((o) => o.floorId !== floorId),
+    furniture: p.furniture.filter((f) => f.floorId !== floorId),
+    settings: { ...p.settings, activeFloorId: active },
+  };
+}
+
+/** 編集中の階のすぐ下の階（なければ undefined） */
+export function floorBelow(p: Project, floorId = p.settings.activeFloorId) {
+  const cur = p.floors.find((f) => f.id === floorId);
+  if (!cur) return undefined;
+  return sortedFloors(p)
+    .filter((f) => f.level < cur.level)
+    .at(-1);
+}

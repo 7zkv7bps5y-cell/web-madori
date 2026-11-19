@@ -38,6 +38,7 @@ export const ROOM_TYPES = [
   'hall',
   'entrance',
   'stairs',
+  'balcony',
 ] as const;
 export type RoomType = (typeof ROOM_TYPES)[number];
 

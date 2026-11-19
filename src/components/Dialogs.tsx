@@ -32,6 +32,15 @@ export function ExportImageDialog({ onClose }: { onClose: () => void }) {
             <option value={0.25}>高解像度（印刷向け）</option>
           </select>
         </label>
+        {project.floors.length > 1 && (
+          <label className="field">
+            <span className="field-label">出力する階</span>
+            <select value={opts.floors} onChange={(e) => set({ floors: e.target.value as ImageOptions['floors'] })}>
+              <option value="all">すべての階を並べる</option>
+              <option value="active">編集中の階のみ</option>
+            </select>
+          </label>
+        )}
         <label className="check">
           <input type="checkbox" checked={opts.background === 'white'} onChange={(e) => set({ background: e.target.checked ? 'white' : 'transparent' })} />
           背景を白にする（オフで透明）

@@ -12,12 +12,15 @@ import {
 } from '../model/geometry';
 import {
   activeContent,
+  addFloor,
   addPlan,
   createFurniture,
   createOpening,
   createProject,
   createRoom,
+  deleteFloor,
   deletePlan,
+  MAX_FLOORS,
   MAX_PLANS,
   renamePlan,
   switchPlan,
@@ -108,6 +111,13 @@ interface State {
   applyFlowFix: (fix: FlowFix) => void;
   duplicateFurniture: (id: string) => void;
   deleteFurniture: (id: string) => void;
+
+  // 階
+  /** 編集する階の切り替え（履歴には残さない） */
+  setActiveFloor: (floorId: string) => void;
+  addFloor: () => boolean;
+  renameFloor: (floorId: string, name: string) => void;
+  deleteFloor: (floorId: string) => void;
 
   // 間取り案（A案・B案…）
   addPlan: (duplicateCurrent: boolean) => boolean;
@@ -368,6 +378,26 @@ export const useStore = create<State>((set, get) => ({
     set({ selection: null });
   },
 
+  setActiveFloor: (floorId) => {
+    const { project } = get();
+    if (project.settings.activeFloorId === floorId || !project.floors.some((f) => f.id === floorId)) return;
+    set({ project: { ...project, settings: { ...project.settings, activeFloorId: floorId } }, selection: null, tool: { kind: 'select' } });
+  },
+  addFloor: () => {
+    if (get().project.floors.length >= MAX_FLOORS) {
+      get().notify(`階は ${MAX_FLOORS} 階までです。`, 'error');
+      return false;
+    }
+    get().commit((p) => addFloor(p));
+    set({ selection: null, tool: { kind: 'select' } });
+    return true;
+  },
+  renameFloor: (floorId, name) =>
+    get().commit((p) => ({ ...p, floors: p.floors.map((f) => (f.id === floorId && name.trim() ? { ...f, name: name.trim() } : f)) })),
+  deleteFloor: (floorId) => {
+    get().commit((p) => deleteFloor(p, floorId));
+    set({ selection: null });
+  },
   addPlan: (duplicateCurrent) => {
     const { project } = get();
     if (project.plans.length >= MAX_PLANS) {
