@@ -225,3 +225,12 @@ textarea.transfer { min-height: 180px; font-family: ui-monospace, monospace; fon
 .ads-on .sidebar .ad-slot { display: block; margin: 0 12px 16px; min-height: 250px; }
 .template-pick { text-align: left; white-space: normal; height: auto; padding: 10px; cursor: pointer; }
 .template-pick:hover { border-color: var(--accent); }
+.flow-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.flow-list li { border: 1px solid var(--border); border-left: 4px solid #d9a032; border-radius: 6px; padding: 6px 8px; font-size: 13px; line-height: 1.5; }
+.flow-list li.warning { border-left-color: var(--danger); }
+.flow-list p { margin: 4px 0 0; }
+.flow-tag { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 0 6px; margin-right: 6px; background: #fbefd5; color: #8a5a00; }
+.warning .flow-tag { background: #f9e1dc; color: var(--danger); }
+button.link { border: 0; background: none; padding: 0; min-height: 0; text-align: left; white-space: normal; text-decoration: underline; color: inherit; font-size: 13px; }
+.btn-group.wrap { flex-wrap: wrap; margin-top: 6px; }
+.small-btn { min-height: 30px; font-size: 12px; padding: 2px 10px; }

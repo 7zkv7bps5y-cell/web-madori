@@ -1,4 +1,5 @@
 import { checkFurniture } from './collision';
+import { checkFlow } from './flowCheck';
 import type { Project, RoomType } from './types';
 import { areaM2 } from './units';
 
@@ -34,6 +35,6 @@ export function planStats(p: Project): PlanStats {
     roomCount: rooms.length,
     totalArea: rooms.reduce((s, r) => s + areaM2(r.w, r.h), 0),
     furnitureCount: p.furniture.filter((f) => f.floorId === floorId).length,
-    warnings: checkFurniture(p).size,
+    warnings: checkFurniture(p).size + checkFlow(p).filter((i) => i.severity === 'warning').length,
   };
 }

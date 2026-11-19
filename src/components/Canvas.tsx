@@ -14,6 +14,7 @@ import {
   type WallHit,
 } from '../model/geometry';
 import { checkFurniture, furnitureCorners, wallFaces } from '../model/collision';
+import { checkFlow, doorSwingPolygon, frontZone } from '../model/flowCheck';
 import {
   angleFromPointer,
   FURNITURE_HANDLES,
@@ -134,7 +135,7 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
   const tool = useStore((s) => s.tool);
   const mode = useStore((s) => s.mode);
   const [hoverRoomId, setHoverRoomId] = useState<string | null>(null);
-  const { zoom, panX, panY, width, height, fitSeq, showDims } = useView();
+  const { zoom, panX, panY, width, height, fitSeq, showDims, showFlow } = useView();
   const setView = useView((s) => s.set);
   const gesture = useRef<Gesture | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -601,6 +602,8 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
     : [];
   const issues = useMemo(() => (planMode ? new Map() : checkFurniture(project)), [project, planMode]);
   const warnIds = useMemo(() => new Set(issues.keys()), [issues]);
+  const flow = useMemo(() => (planMode || !showFlow ? [] : checkFlow(project)), [project, planMode, showFlow]);
+  const flowIds = useMemo(() => new Set(flow.map((i) => i.id)), [flow]);
 
   const openingBand = (o: typeof selOpening, room: typeof selOpeningRoom, extra: number) => {
     if (!o || !room) return '';
@@ -769,6 +772,69 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
             </g>
           );
         })}
+
+        {/* 生活動線チェックの表示（ドアの開閉範囲・家具の前の空き・すき間） */}
+        {!planMode && showFlow && (
+          <g pointerEvents="none">
+            {project.openings
+              .filter((o) => o.floorId === floorId && openingDef(o.type).kind === 'door')
+              .map((o) => {
+                const room = rooms.find((r) => r.id === o.roomId);
+                if (!room) return null;
+                const bad = flowIds.has(`door:${o.id}`);
+                return (
+                  <polygon
+                    key={o.id}
+                    points={doorSwingPolygon(o, room).map((q) => `${q.x},${q.y}`).join(' ')}
+                    fill={bad ? 'rgba(214,69,48,0.22)' : 'rgba(58,124,170,0.10)'}
+                    stroke={bad ? '#d64530' : '#3a7caa'}
+                    strokeWidth={1}
+                    strokeDasharray="4 3"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                );
+              })}
+            {furniture.map((f) => {
+              const zone = frontZone(f);
+              if (!zone) return null;
+              const bad = flowIds.has(`front:${f.id}`);
+              return (
+                <polygon
+                  key={f.id}
+                  points={zone.map((q) => `${q.x},${q.y}`).join(' ')}
+                  fill={bad ? 'rgba(214,69,48,0.18)' : 'rgba(58,124,170,0.06)'}
+                  stroke={bad ? '#d64530' : '#7aa6c4'}
+                  strokeWidth={1}
+                  strokeDasharray="3 3"
+                  vectorEffect="non-scaling-stroke"
+                />
+              );
+            })}
+            {flow.map((i) => {
+              if (i.shape.kind !== 'gap') return null;
+              const { a, b, distance } = i.shape;
+              return (
+                <g key={i.id}>
+                  <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#d9a032" strokeWidth={2.5} vectorEffect="non-scaling-stroke" />
+                  <text
+                    x={(a.x + b.x) / 2}
+                    y={(a.y + b.y) / 2 + fontPx * 0.35}
+                    fontSize={fontPx}
+                    textAnchor="middle"
+                    fontWeight={700}
+                    fill="#8a5a00"
+                    paintOrder="stroke"
+                    stroke="#fff"
+                    strokeWidth={fontPx * 0.3}
+                    fontFamily="system-ui,sans-serif"
+                  >
+                    {Math.round(distance / 10)}cm
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        )}
 
         {/* 家具の当たり判定と選択 */}
         {!planMode && (

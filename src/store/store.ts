@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { applyFlowFix, type FlowFix } from '../model/flowCheck';
 import { openingDef, roomDef } from '../model/catalog';
 import {
   clampOpeningToRoom,
@@ -103,6 +104,8 @@ interface State {
   addFurniture: (type: string, at: { x: number; y: number }) => void;
   updateFurniture: (id: string, patch: Partial<Omit<Furniture, 'id'>>) => void;
   rotateFurniture: (id: string, delta: number) => void;
+  /** 生活動線チェックの改善提案を適用 */
+  applyFlowFix: (fix: FlowFix) => void;
   duplicateFurniture: (id: string) => void;
   deleteFurniture: (id: string) => void;
 
@@ -352,6 +355,7 @@ export const useStore = create<State>((set, get) => ({
       ...p,
       furniture: p.furniture.map((f) => (f.id === id ? { ...f, rotation: normalizeAngle(f.rotation + delta) } : f)),
     })),
+  applyFlowFix: (fix) => get().commit((p) => applyFlowFix(p, fix)),
   duplicateFurniture: (id) => {
     const f = get().project.furniture.find((x) => x.id === id);
     if (!f) return;

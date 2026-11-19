@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { checkFurniture, type FurnitureIssue } from '../model/collision';
+import { checkFlow, FIX_LABEL, type FlowIssue } from '../model/flowCheck';
 import { FURNITURE_CATEGORIES, FURNITURE_DEFS, furnitureDef } from '../model/furnitureCatalog';
 import type { Furniture, Project } from '../model/types';
 import { normalizeAngle, useStore } from '../store/store';
@@ -17,6 +18,42 @@ export function issueText(issue: FurnitureIssue, p: Project): string {
   }
 }
 
+function useFlow() {
+  const project = useStore((s) => s.project);
+  return useMemo(() => checkFlow(project), [project]);
+}
+
+/** 生活動線チェックの結果一覧（改善の提案と、ワンクリックで直せるものはボタン） */
+function FlowIssueList({ issues, selectable }: { issues: FlowIssue[]; selectable: boolean }) {
+  const st = useStore.getState();
+  return (
+    <ul className="flow-list">
+      {issues.map((i) => (
+        <li key={i.id} className={i.severity}>
+          <span className="flow-tag">{i.severity === 'warning' ? '要確認' : '目安'}</span>
+          {selectable ? (
+            <button type="button" className="link" onClick={() => st.select({ kind: 'furniture', id: i.furnitureIds[0] })}>
+              {i.message}
+            </button>
+          ) : (
+            <span>{i.message}</span>
+          )}
+          <p className="muted small">{i.suggestion}</p>
+          {i.fixes.length > 0 && (
+            <div className="btn-group wrap">
+              {i.fixes.map((f) => (
+                <button key={f.kind} type="button" className="primary small-btn" onClick={() => st.applyFlowFix(f)}>
+                  {FIX_LABEL[f.kind]}
+                </button>
+              ))}
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function useIssues() {
   const project = useStore((s) => s.project);
   return useMemo(() => checkFurniture(project), [project]);
@@ -32,6 +69,7 @@ export function FurnitureProps({ item }: { item: Furniture }) {
   const project = useStore((s) => s.project);
   const st = useStore.getState();
   const issues = useIssues().get(item.id) ?? [];
+  const flow = useFlow().filter((i) => i.furnitureIds.includes(item.id));
   const def = furnitureDef(item.type);
   const room = roomAt(project, item);
   const set = (patch: Partial<Furniture>) => st.updateFurniture(item.id, patch);
@@ -110,6 +148,13 @@ export function FurnitureProps({ item }: { item: Furniture }) {
         </div>
       )}
 
+      {flow.length > 0 && (
+        <div className="props-group">
+          <h3>生活動線チェック</h3>
+          <FlowIssueList issues={flow} selectable={false} />
+        </div>
+      )}
+
       <div className="actions">
         <button type="button" onClick={() => st.duplicateFurniture(item.id)}>
           ⧉ 複製
@@ -129,6 +174,10 @@ export function FurnitureSummary() {
   const showDims = useView((s) => s.showDims);
   const setView = useView((s) => s.set);
   const issues = useIssues();
+  const flow = useFlow();
+  const showFlow = useView((s) => s.showFlow);
+  const flowWarnings = flow.filter((i) => i.severity === 'warning');
+  const flowInfo = flow.filter((i) => i.severity === 'info');
   const items = project.furniture.filter((f) => f.floorId === project.settings.activeFloorId);
   return (
     <div className="props">
@@ -171,6 +220,28 @@ export function FurnitureSummary() {
             })}
           </ul>
         )}
+      </div>
+      <div className="props-group">
+        <h3>生活動線チェック</h3>
+        <label className="check">
+          <input type="checkbox" checked={showFlow} onChange={(e) => setView({ showFlow: e.target.checked })} />
+          ドアの開閉範囲・家具の前の空き・すき間を図に表示
+        </label>
+        {flow.length === 0 ? (
+          <p className="muted small">
+            {items.length ? 'ドアの開閉や家具の使い勝手で気になる点はありません。' : '家具を置くと、ドアの開閉範囲や通路幅を確認できます。'}
+          </p>
+        ) : (
+          <>
+            <p className="small">
+              要確認 <b>{flowWarnings.length}</b> 件 ／ 目安 <b>{flowInfo.length}</b> 件
+            </p>
+            <FlowIssueList issues={[...flowWarnings, ...flowInfo]} selectable />
+          </>
+        )}
+        <p className="muted small">
+          通路幅は {60}cm 以上が目安です。判定は目安なので、実際の暮らし方に合わせて確認してください。
+        </p>
       </div>
       <div className="guide">
         <h3>家具配置の操作</h3>

@@ -14,7 +14,9 @@ interface ViewState {
   fitSeq: number;
   /** 家具配置モード: すべての家具の寸法を表示 */
   showDims: boolean;
-  set: (v: Partial<Pick<ViewState, 'zoom' | 'panX' | 'panY' | 'width' | 'height' | 'showDims'>>) => void;
+  /** 家具配置モード: 生活動線チェックの結果を図に表示 */
+  showFlow: boolean;
+  set: (v: Partial<Pick<ViewState, 'zoom' | 'panX' | 'panY' | 'width' | 'height' | 'showDims' | 'showFlow'>>) => void;
   zoomAt: (factor: number, sx?: number, sy?: number) => void;
   requestFit: () => void;
 }
@@ -29,6 +31,7 @@ export const useView = create<ViewState>((set, get) => ({
   height: 600,
   fitSeq: 0,
   showDims: false,
+  showFlow: true,
   set: (v) => set(v),
   zoomAt: (factor, sx, sy) => {
     const { zoom, panX, panY, width, height } = get();
