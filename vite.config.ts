@@ -23,7 +23,7 @@ const PAGE_INPUTS: Record<string, string> = {
  * - VITE_SITE_URL があれば canonical / og:url / og:image と sitemap.xml を出力
  * - robots.txt を出力
  */
-function sitePlugin(siteUrl: string | undefined): Plugin {
+function sitePlugin(siteUrl: string | undefined, noindex: boolean): Plugin {
   const base = siteUrl?.replace(/\/+$/, '');
   return {
     name: 'web-madori-site',
@@ -34,6 +34,10 @@ function sitePlugin(siteUrl: string | undefined): Plugin {
           .replace('<!--site:header-->', SITE_HEADER)
           .replace('<!--site:footer-->', SITE_FOOTER)
           .replace(/<!--site:ad:([\w-]+)-->/g, (_, name: string) => adSlot(name));
+        if (noindex) {
+          // 試験公開: 検索エンジンに載せない
+          out = out.replace('</head>', '  <meta name="robots" content="noindex, nofollow" />\n  </head>');
+        }
         if (base) {
           const path = ctx.path.replace(/index\.html$/, '');
           out = out.replace(
@@ -47,7 +51,9 @@ function sitePlugin(siteUrl: string | undefined): Plugin {
       },
     },
     generateBundle() {
-      const robots = ['User-agent: *', 'Allow: /', base ? `Sitemap: ${base}/sitemap.xml` : ''].filter(Boolean).join('\n');
+      const robots = noindex
+        ? 'User-agent: *\nDisallow: /'
+        : ['User-agent: *', 'Allow: /', base ? `Sitemap: ${base}/sitemap.xml` : ''].filter(Boolean).join('\n');
       this.emitFile({ type: 'asset', fileName: 'robots.txt', source: robots + '\n' });
       if (base) {
         const urls = SITE_PAGES.map((p) => `  <url><loc>${base}${p}</loc></url>`).join('\n');
@@ -64,7 +70,7 @@ function sitePlugin(siteUrl: string | undefined): Plugin {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   return {
-    plugins: [react(), sitePlugin(env.VITE_SITE_URL)],
+    plugins: [react(), sitePlugin(env.VITE_SITE_URL, env.VITE_NOINDEX === '1')],
     build: {
       rollupOptions: {
         input: Object.fromEntries(Object.entries(PAGE_INPUTS).map(([k, v]) => [k, resolve(process.cwd(), v)])),
