@@ -7,7 +7,7 @@ import { serializeProject } from '../model/project';
 import type { Project } from '../model/types';
 import { buildSvg, renderCanvas, type ImageOptions } from './exportImage';
 import { planPage } from './exportPdf';
-import { downloadBlob, safeFileName } from './io';
+import { downloadBlob, FLOORPLAN_MIME, safeFileName } from './io';
 import { createZip } from './zip';
 
 export type ImageKind = 'basic' | 'dimensions' | 'furniture';
@@ -108,6 +108,9 @@ export async function buildBundle(
 ): Promise<BundleFile[]> {
   const formats = effectiveFormats(selected);
   const base = safeFileName(project.projectName);
+  // 複数案があるときは、編集中の案だけを描く画像・PDF のファイル名に案の名前を付ける
+  const activePlan = project.plans.find((pl) => pl.id === project.activePlanId)?.name;
+  const imageBase = project.plans.length > 1 && activePlan ? safeFileName(`${project.projectName}_${activePlan}`) : base;
   const def = (k: SaveFormat) => SAVE_FORMATS.find((f) => f.key === k)!;
   const files: BundleFile[] = [];
   const pdfPages: { canvas: HTMLCanvasElement; plan: NonNullable<ReturnType<typeof planPage>> }[] = [];
@@ -119,7 +122,7 @@ export async function buildBundle(
       files.push({ format: key, zipName: d.zipName, fileName: base + d.suffix, data: new TextEncoder().encode(serializeProject(project)) });
     } else if (key !== 'pdf') {
       const canvas = await renderCanvas(project, imageOptionsFor(key));
-      files.push({ format: key, zipName: d.zipName, fileName: base + d.suffix, data: await canvasBytes(canvas) });
+      files.push({ format: key, zipName: d.zipName, fileName: imageBase + d.suffix, data: await canvasBytes(canvas) });
     }
   }
 
@@ -143,14 +146,14 @@ export async function buildBundle(
     }
     if (doc) {
       doc.setProperties({ title: project.projectName, creator: 'Web間取り' });
-      files.push({ format: 'pdf', zipName: d.zipName, fileName: base + d.suffix, data: new Uint8Array(doc.output('arraybuffer')) });
+      files.push({ format: 'pdf', zipName: d.zipName, fileName: imageBase + d.suffix, data: new Uint8Array(doc.output('arraybuffer')) });
     }
   }
   return files;
 }
 
 const MIME: Record<SaveFormat, string> = {
-  project: 'application/json',
+  project: FLOORPLAN_MIME,
   basic: 'image/png',
   dimensions: 'image/png',
   furniture: 'image/png',

@@ -20,7 +20,7 @@ import { serializeProject, parseProject } from './model/project';
 import { TEMPLATES } from './model/templates';
 import { useStore } from './store/store';
 import { useView } from './store/view';
-import { autosave, copyText, loadAutosave, readProjectFile, readText, saveProjectFile } from './utils/io';
+import { autosave, copyText, loadAutosave, projectFileAccept, readProjectFile, readText, saveProjectFile } from './utils/io';
 
 function useMedia(query: string) {
   const [match, setMatch] = useState(() => window.matchMedia(query).matches);
@@ -432,7 +432,7 @@ export default function App() {
       <input
         ref={fileRef}
         type="file"
-        accept=".floorplan,.json,application/json"
+        accept={projectFileAccept()}
         hidden
         onChange={async (e) => {
           const file = e.target.files?.[0];

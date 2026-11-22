@@ -55,3 +55,67 @@ describe('部屋ラベルの配置', () => {
     expect(layoutRoomLabel(r, { ...opts, mode: 'normal' })).toBeNull();
   });
 });
+
+import { createOpening, createProject } from '../../model/project';
+import { clippedArea, doorSwingObstacles } from './labelLayout';
+
+/** ラベル全体の外枠（目安）と、避ける場所との重なり割合 */
+function overlapRatio(l: NonNullable<ReturnType<typeof layoutRoomLabel>>, obstacles: { x: number; y: number }[][]) {
+  const w = Math.max(...l.lines.map((x) => textWidth(x.text) * x.size));
+  const first = l.lines[0];
+  const last = l.lines[l.lines.length - 1];
+  const top = l.y - first.size * 0.85;
+  const bottom = l.y + last.dy + last.size * 0.3;
+  const box = { x: l.x - w / 2, y: top, w, h: bottom - top };
+  return obstacles.reduce((s, p) => s + clippedArea(p, box), 0) / (box.w * box.h);
+}
+
+describe('ドアの開閉範囲を避けた配置', () => {
+  const setup = (w: number, h: number, doors: { side: 'top' | 'left' | 'right' | 'bottom'; offset: number; width: number }[]) => {
+    const p = createProject();
+    const f = p.settings.activeFloorId;
+    const r = { ...createRoom('dressing', { x: 0, y: 0, w, h }, f), style: { ...createRoom('room', { x: 0, y: 0, w, h }, f).style, showFixtures: false } };
+    p.rooms = [r];
+    p.openings = doors.map((d) => createOpening('door', { roomId: r.id, ...d }, f));
+    return { p, r, obstacles: doorSwingObstacles(p, f) };
+  };
+
+  it('切り取り面積の計算', () => {
+    const sq = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    expect(clippedArea(sq, { x: 5, y: 5, w: 10, h: 10 })).toBeCloseTo(25);
+    expect(clippedArea(sq, { x: 20, y: 20, w: 5, h: 5 })).toBe(0);
+  });
+
+  it('ドアがなければ従来どおり中央', () => {
+    const { r, obstacles } = setup(1820, 1820, []);
+    const l = layoutRoomLabel(r, { ...opts, mode: 'dimensions', obstacles })!;
+    expect(l.x).toBeCloseTo(910);
+  });
+
+  it('狭い部屋でもドアの開閉範囲とほぼ重ならない位置に置く（寸法付き）', () => {
+    // 1,820 角の脱衣所。上辺の中央付近から内開きのドア
+    const { r, obstacles } = setup(1820, 1820, [{ side: 'top', offset: 520, width: 780 }]);
+    const centered = layoutRoomLabel(r, { ...opts, mode: 'dimensions' })!;
+    const placed = layoutRoomLabel(r, { ...opts, mode: 'dimensions', obstacles })!;
+    expect(overlapRatio(centered, obstacles)).toBeGreaterThan(0.05);
+    expect(overlapRatio(placed, obstacles)).toBeLessThanOrEqual(0.05);
+    // 寸法の行は残っている
+    expect(placed.lines.map((x) => x.kind)).toContain('dims');
+  });
+
+  it('ドアが 2 つある廊下でも重なりを減らす', () => {
+    const { r, obstacles } = setup(2730, 910, [
+      { side: 'top', offset: 100, width: 780 },
+      { side: 'bottom', offset: 1850, width: 780 },
+    ]);
+    const centered = layoutRoomLabel(r, { ...opts, mode: 'dimensions' })!;
+    const placed = layoutRoomLabel(r, { ...opts, mode: 'dimensions', obstacles })!;
+    expect(overlapRatio(placed, obstacles)).toBeLessThan(overlapRatio(centered, obstacles) + 1e-9);
+    expect(overlapRatio(placed, obstacles)).toBeLessThanOrEqual(0.05);
+  });
+});

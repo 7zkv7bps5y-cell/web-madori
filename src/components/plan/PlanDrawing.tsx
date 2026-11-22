@@ -4,7 +4,8 @@ import { computeWalls, EPS, openingGeom, type OpeningGeom } from '../../model/ge
 import type { Opening, Project, Room, WallSegment } from '../../model/types';
 import { wallKind, wallThicknessOf } from '../../model/collision';
 import { RoomFixtures } from './Fixtures';
-import { layoutRoomLabel, type LabelLine, type LabelMode } from './labelLayout';
+import type { Vec } from '../../model/flowCheck';
+import { doorSwingObstacles, layoutRoomLabel, type LabelLine, type LabelMode } from './labelLayout';
 
 const WALL_COLOR = '#3b3833';
 const RAILING_COLOR = '#9b958a';
@@ -69,8 +70,27 @@ const LABEL_FONT = "'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif";
 const LABEL_COLOR: Record<LabelLine['kind'], string> = { name: '#2d2a26', dims: '#1f5f4d', area: '#5d574e' };
 
 /** 部屋名・広さ・寸法のラベル（文字は部屋に収まるよう自動で縮小・省略） */
-export function RoomLabel({ room, project, mode = 'normal', zoom }: { room: Room; project: Project; mode?: LabelMode; zoom?: number }) {
-  const layout = layoutRoomLabel(room, { mode, zoom, areaUnit: project.settings.areaUnit, tatamiArea: project.settings.tatamiArea });
+export function RoomLabel({
+  room,
+  project,
+  mode = 'normal',
+  zoom,
+  obstacles,
+}: {
+  room: Room;
+  project: Project;
+  mode?: LabelMode;
+  zoom?: number;
+  /** 避ける場所（ドアの開閉範囲） */
+  obstacles?: Vec[][];
+}) {
+  const layout = layoutRoomLabel(room, {
+    mode,
+    zoom,
+    obstacles,
+    areaUnit: project.settings.areaUnit,
+    tatamiArea: project.settings.tatamiArea,
+  });
   if (!layout) return null;
   return (
     <g pointerEvents="none" fontFamily={LABEL_FONT} textAnchor="middle">
@@ -96,12 +116,13 @@ export function RoomLabel({ room, project, mode = 'normal', zoom }: { room: Room
 
 /** 指定した階の全部屋のラベル */
 export function RoomLabels({ project, floorId, mode = 'normal', zoom }: { project: Project; floorId: string; mode?: LabelMode; zoom?: number }) {
+  const obstacles = useMemo(() => doorSwingObstacles(project, floorId), [project, floorId]);
   return (
     <g>
       {project.rooms
         .filter((r) => r.floorId === floorId)
         .map((r) => (
-          <RoomLabel key={r.id} room={r} project={project} mode={mode} zoom={zoom} />
+          <RoomLabel key={r.id} room={r} project={project} mode={mode} zoom={zoom} obstacles={obstacles} />
         ))}
     </g>
   );
@@ -283,6 +304,7 @@ export const PlanDrawing = memo(function PlanDrawing({
 }: PlanDrawingProps) {
   const rooms = useMemo(() => project.rooms.filter((r) => r.floorId === floorId), [project.rooms, floorId]);
   const walls = useMemo(() => computeWalls(rooms, floorId), [rooms, floorId]);
+  const doorObstacles = useMemo(() => doorSwingObstacles(project, floorId), [project, floorId]);
   const openings = useMemo(() => placeOpenings(project, rooms, walls), [project, rooms, walls]);
   return (
     <g>
@@ -306,7 +328,7 @@ export const PlanDrawing = memo(function PlanDrawing({
         ))}
       </g>
       {overlay}
-      {labels && rooms.map((r) => <RoomLabel key={r.id} room={r} project={project} mode={labelMode} />)}
+      {labels && rooms.map((r) => <RoomLabel key={r.id} room={r} project={project} mode={labelMode} obstacles={doorObstacles} />)}
     </g>
   );
 });

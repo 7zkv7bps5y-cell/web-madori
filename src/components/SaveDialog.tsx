@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { buildSvg } from '../utils/exportImage';
 import { effectiveFormats, imageOptionsFor, IMAGE_KINDS, SAVE_FORMATS, saveBundle, type ImageKind, type SaveFormat } from '../utils/saveBundle';
 import { useStore } from '../store/store';
+import { inAppBrowserName } from '../utils/io';
 import { Modal } from './Dialogs';
 
 const KIND_LABEL: Record<ImageKind, string> = { basic: '基本', dimensions: '寸法付き', furniture: '家具付き' };
@@ -40,8 +41,11 @@ export function SaveDialog({ onClose, compact }: { onClose: () => void; compact:
       else n.delete(k);
       return n;
     });
-  const planName = project.plans.length > 1 ? project.plans.find((p) => p.id === project.activePlanId)?.name : null;
+  const multiPlan = project.plans.length > 1;
+  const activePlanName = project.plans.find((p) => p.id === project.activePlanId)?.name ?? '';
+  const allPlanNames = project.plans.map((p) => p.name).join('・');
   const floors = project.floors.filter((f) => project.rooms.some((r) => r.floorId === f.id)).length;
+  const inApp = inAppBrowserName();
   const empty = project.rooms.length === 0;
 
   return (
@@ -49,6 +53,35 @@ export function SaveDialog({ onClose, compact }: { onClose: () => void; compact:
       <p className="muted small">
         保存したい形式にチェックを入れて「保存する」を押してください。複数選ぶと ZIP ファイル 1 つにまとめて保存します。
       </p>
+      {inApp && (
+        <p className="save-warning" role="alert">
+          {inApp} のアプリ内ブラウザでは、ファイルを保存できないことがあります。うまく保存できないときは、画面のメニューから「Safari で開く」「ブラウザで開く」を選んでから保存してください。
+        </p>
+      )}
+      {/* 保存される範囲（複数案のときは、画像・PDF が編集中の案だけであることを明示） */}
+      <div className={`save-scope ${multiPlan ? 'multi' : ''}`}>
+        <h3>保存される範囲</h3>
+        <dl>
+          <dt>編集用データ</dt>
+          <dd>{multiPlan ? `すべての案（${allPlanNames}）` : 'この間取りのすべて'}</dd>
+          <dt>間取り図・PDF</dt>
+          <dd>
+            {multiPlan ? (
+              <>
+                編集中の案「<b>{activePlanName}</b>」のみ
+              </>
+            ) : (
+              '編集中の間取り'
+            )}
+            {floors > 1 && `（${floors} つの階を横に並べて描きます）`}
+          </dd>
+        </dl>
+        {multiPlan && (
+          <p className="small">
+            ほかの案の間取り図が必要なときは、この画面を閉じて上部の案の切り替え（{activePlanName} ▾）で案を選んでから、もう一度保存してください。
+          </p>
+        )}
+      </div>
       <ul className="save-list">
         {SAVE_FORMATS.map((f) => {
           const disabled = (f.key === 'pdf' && !hasImage) || (f.key !== 'project' && empty);
@@ -58,7 +91,14 @@ export function SaveDialog({ onClose, compact }: { onClose: () => void; compact:
               <label className="save-item">
                 <input type="checkbox" checked={checked} disabled={disabled || !!busy} onChange={(e) => toggle(f.key, e.target.checked)} />
                 <span>
-                  <strong>{f.label}</strong>
+                  <strong>
+                    {f.label}
+                    {multiPlan && (
+                      <span className={`scope-tag ${f.key === 'project' ? 'all' : ''}`}>
+                        {f.key === 'project' ? 'すべての案' : activePlanName}
+                      </span>
+                    )}
+                  </strong>
                   <span className="muted small">{f.description}</span>
                   {f.key === 'pdf' && !hasImage && <span className="small error">間取り図を 1 つ以上選ぶと作れます。</span>}
                 </span>
@@ -67,10 +107,6 @@ export function SaveDialog({ onClose, compact }: { onClose: () => void; compact:
           );
         })}
       </ul>
-      <p className="muted small">
-        間取り図{floors > 1 ? `は ${floors} つの階を横に並べて描きます。` : 'には編集中の内容を描きます。'}
-        {planName && `対象は編集中の「${planName}」です（編集用データにはすべての案が入ります）。`}
-      </p>
 
       {!empty && (
         <details className="save-preview-box" open={!compact}>
