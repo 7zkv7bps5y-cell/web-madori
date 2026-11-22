@@ -6,12 +6,16 @@ import { decodeShare, shareTokenFromHash } from './utils/share';
 import { Palette } from './components/Palette';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { FloorTabs } from './components/FloorTabs';
+import { GuideTour, guideDone } from './components/GuideTour';
 import { PlansDialog } from './components/PlansDialog';
+import { SaveDialog } from './components/SaveDialog';
+import { ScrollArea } from './components/ScrollArea';
 import { TemplatesDialog } from './components/TemplatesDialog';
 import { initAds } from './site/ads';
 import { TopBar, type ProjectActions } from './components/TopBar';
 import { furnitureDef } from './model/furnitureCatalog';
 import { openingDef } from './model/catalog';
+import { areaM2, formatArea } from './model/units';
 import { serializeProject, parseProject } from './model/project';
 import { TEMPLATES } from './model/templates';
 import { useStore } from './store/store';
@@ -46,12 +50,23 @@ function Toast() {
   );
 }
 
-function ZoomControls() {
+function ZoomControls({ onHelp }: { onHelp: () => void }) {
   const zoomAt = useView((s) => s.zoomAt);
   const requestFit = useView((s) => s.requestFit);
   const zoom = useView((s) => s.zoom);
+  const showRoomDims = useView((s) => s.showRoomDims);
   return (
     <div className="zoom-controls">
+      <button
+        type="button"
+        className={`dims-toggle ${showRoomDims ? 'active' : ''}`}
+        onClick={() => useView.getState().set({ showRoomDims: !showRoomDims })}
+        aria-pressed={showRoomDims}
+        title="部屋の寸法・畳数・面積の表示を切り替え"
+        aria-label="寸法表示の切り替え"
+      >
+        📏
+      </button>
       <button type="button" onClick={() => zoomAt(1 / 1.25)} aria-label="縮小">
         −
       </button>
@@ -59,8 +74,11 @@ function ZoomControls() {
       <button type="button" onClick={() => zoomAt(1.25)} aria-label="拡大">
         ＋
       </button>
-      <button type="button" onClick={requestFit} title="全体を表示">
+      <button type="button" onClick={requestFit} title="全体を表示" aria-label="全体を表示">
         ⤢
+      </button>
+      <button type="button" className="help-btn" onClick={onHelp} title="操作ガイド" aria-label="操作ガイドを見る">
+        ？
       </button>
     </div>
   );
@@ -149,9 +167,19 @@ function MobileSelectionBar({ onDetail }: { onDetail: () => void }) {
       : selection.kind === 'opening'
         ? openingDef(project.openings.find((o) => o.id === selection.id)?.type ?? 'door').label
         : project.furniture.find((f) => f.id === selection.id)?.name ?? furnitureDef('').label;
+  const room = selection.kind === 'room' ? project.rooms.find((r) => r.id === selection.id) : undefined;
+  const fur = selection.kind === 'furniture' ? project.furniture.find((f) => f.id === selection.id) : undefined;
+  const detail = room
+    ? `${formatArea(areaM2(room.w, room.h), 'tatami', project.settings.tatamiArea)}・${Math.round(room.w / 10)}×${Math.round(room.h / 10)}cm`
+    : fur
+      ? `${Math.round(fur.w / 10)}×${Math.round(fur.d / 10)}cm`
+      : '';
   return (
     <div className="mobile-selbar">
-      <strong className="ellipsis">{label}</strong>
+      <div className="selbar-title">
+        <strong className="ellipsis">{label}</strong>
+        {detail && <span className="ellipsis small muted">{detail}</span>}
+      </div>
       {selection.kind !== 'opening' && (
         <button type="button" onClick={() => st.rotateSelection()}>
           ↻
@@ -179,6 +207,9 @@ export default function App() {
   const [plansOpen, setPlansOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
+  // 初回だけ操作ガイドを表示（共有URLやテンプレートから開いた場合も同じ）
+  const [guideOpen, setGuideOpen] = useState(() => !guideDone());
   const [shareOpen, setShareOpen] = useState(false);
   const mode = useStore((s) => s.mode);
   const [transfer, setTransfer] = useState<{ mode: 'copy' | 'paste'; text?: string } | null>(null);
@@ -197,6 +228,8 @@ export default function App() {
     if (tpl) {
       useStore.getState().loadProject(tpl.create(), !!saved);
       useStore.getState().notify(`テンプレート「${tpl.name}」を開きました。`);
+      // 開いた直後の状態も自動保存しておく（編集前に再読み込みしても消えないように）
+      autosave(useStore.getState().project);
     } else if (params.has('new') && saved && saved.rooms.length > 0) {
       useStore.getState().newProject();
     }
@@ -208,6 +241,7 @@ export default function App() {
         useStore.getState().loadProject(r.project, !!saved);
         useView.getState().requestFit();
         useStore.getState().notify(`共有された間取り「${r.project.projectName}」を開きました。${saved ? '（元に戻すで前の間取りに戻せます）' : ''}`);
+        autosave(useStore.getState().project);
       });
     }
     if (params.toString() || window.location.hash) window.history.replaceState(null, '', window.location.pathname);
@@ -265,6 +299,8 @@ export default function App() {
     exportImage: () => setExportOpen(true),
     openPlans: () => setPlansOpen(true),
     exportPdf: () => setPdfOpen(true),
+    openGuide: () => setGuideOpen(true),
+    openSave: () => setSaveOpen(true),
     shareUrl: () => setShareOpen(true),
   };
 
@@ -287,7 +323,7 @@ export default function App() {
         st.duplicateSelection();
       } else if (mod && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        actions.saveFile();
+        setSaveOpen(true);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (st.selection) {
           e.preventDefault();
@@ -323,9 +359,11 @@ export default function App() {
       <main className="workspace">
         {!mobile && (
           <aside className="sidebar left" aria-label="パーツ一覧">
-            <Palette />
-            {/* 広告枠（AdSense 設定時のみ表示。キャンバス内には置かない） */}
-            <aside className="ad-slot" data-ad-slot="editor-sidebar" aria-label="広告" />
+            <ScrollArea>
+              <Palette />
+              {/* 広告枠（AdSense 設定時のみ表示。キャンバス内には置かない） */}
+              <aside className="ad-slot" data-ad-slot="editor-sidebar" aria-label="広告" />
+            </ScrollArea>
           </aside>
         )}
         <section className="stage">
@@ -333,31 +371,34 @@ export default function App() {
           <PlacementBanner />
           <FloorTabs />
           <EmptyState onTemplate={actions.openTemplate} />
-          <ZoomControls />
+          <ZoomControls onHelp={() => setGuideOpen(true)} />
         </section>
         {!mobile && (
           <aside className="sidebar right" aria-label="設定">
-            <PropertiesPanel />
+            <ScrollArea>
+              <PropertiesPanel />
+            </ScrollArea>
           </aside>
+        )}
+        {/* スマートフォン: パーツ・設定のシート。作業領域の中に置くため、下部ツールバーとは重ならない */}
+        {mobile && sheet !== 'none' && (
+          <div className="sheet" role="dialog" aria-label={sheet === 'parts' ? 'パーツ一覧' : '設定'}>
+            <div className="sheet-head">
+              <strong>{sheet === 'parts' ? (mode === 'plan' ? 'パーツ（部屋・ドア・窓）' : '家具・家電') : '設定'}</strong>
+              <button type="button" onClick={() => setSheet('none')} aria-label="閉じる">
+                ✕
+              </button>
+            </div>
+            <ScrollArea className="sheet-body">
+              {sheet === 'parts' ? <Palette onPicked={() => setSheet('none')} /> : <PropertiesPanel />}
+            </ScrollArea>
+          </div>
         )}
       </main>
 
       {mobile && (
         <>
           {sheet === 'none' && <MobileSelectionBar onDetail={() => setSheet('props')} />}
-          {sheet !== 'none' && (
-            <div className="sheet" role="dialog" aria-label={sheet === 'parts' ? 'パーツ一覧' : '設定'}>
-              <div className="sheet-head">
-                <strong>{sheet === 'parts' ? 'パーツ' : '設定'}</strong>
-                <button type="button" onClick={() => setSheet('none')} aria-label="閉じる">
-                  ✕
-                </button>
-              </div>
-              <div className="sheet-body">
-                {sheet === 'parts' ? <Palette onPicked={() => setSheet('none')} /> : <PropertiesPanel />}
-              </div>
-            </div>
-          )}
           <nav className="bottombar" aria-label="ツールバー">
             <button type="button" className={sheet === 'parts' ? 'active' : ''} onClick={() => setSheet(sheet === 'parts' ? 'none' : 'parts')}>
               ＋<small>パーツ</small>
@@ -417,6 +458,14 @@ export default function App() {
           }}
         />
       )}
+      {guideOpen && (
+        <GuideTour
+          touch={coarse || mobile}
+          onClose={() => setGuideOpen(false)}
+          onTemplate={() => setTemplatesOpen(true)}
+        />
+      )}
+      {saveOpen && <SaveDialog compact={mobile} onClose={() => setSaveOpen(false)} />}
       {pdfOpen && <ExportPdfDialog onClose={() => setPdfOpen(false)} />}
       {shareOpen && <ShareDialog onClose={() => setShareOpen(false)} />}
       {plansOpen && <PlansDialog onClose={() => setPlansOpen(false)} />}

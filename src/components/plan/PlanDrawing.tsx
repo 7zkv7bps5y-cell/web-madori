@@ -2,9 +2,9 @@ import { memo, useMemo, type ReactElement, type ReactNode } from 'react';
 import { openingDef, roomDef } from '../../model/catalog';
 import { computeWalls, EPS, openingGeom, type OpeningGeom } from '../../model/geometry';
 import type { Opening, Project, Room, WallSegment } from '../../model/types';
-import { areaM2, formatArea } from '../../model/units';
 import { wallKind, wallThicknessOf } from '../../model/collision';
-import { fixtureDepth, localSize, localToWorld, RoomFixtures } from './Fixtures';
+import { RoomFixtures } from './Fixtures';
+import { layoutRoomLabel, type LabelLine, type LabelMode } from './labelLayout';
 
 const WALL_COLOR = '#3b3833';
 const RAILING_COLOR = '#9b958a';
@@ -65,44 +65,44 @@ function RoomBody({ room, showFixtures, prefix }: { room: Room; showFixtures: bo
   );
 }
 
-function RoomLabel({ room, project }: { room: Room; project: Project }) {
-  if (!room.style.showLabel && !room.style.showArea) return null;
-  const { lw, lh } = localSize(room);
-  const depth = room.style.showFixtures ? fixtureDepth(room.type, lh) : 0;
-  const ly = depth > 0 && lh - depth > 300 ? depth + (lh - depth) / 2 : lh / 2;
-  const p = localToWorld(room, lw / 2, ly);
-  const fs = Math.max(110, Math.min(240, Math.min(room.w, room.h) / 5.5));
-  const area = formatArea(areaM2(room.w, room.h), project.settings.areaUnit, project.settings.tatamiArea);
-  const both = room.style.showLabel && room.style.showArea;
+const LABEL_FONT = "'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif";
+const LABEL_COLOR: Record<LabelLine['kind'], string> = { name: '#2d2a26', dims: '#1f5f4d', area: '#5d574e' };
+
+/** 部屋名・広さ・寸法のラベル（文字は部屋に収まるよう自動で縮小・省略） */
+export function RoomLabel({ room, project, mode = 'normal', zoom }: { room: Room; project: Project; mode?: LabelMode; zoom?: number }) {
+  const layout = layoutRoomLabel(room, { mode, zoom, areaUnit: project.settings.areaUnit, tatamiArea: project.settings.tatamiArea });
+  if (!layout) return null;
   return (
-    <g pointerEvents="none" fontFamily="'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif" textAnchor="middle">
-      {room.style.showLabel && (
+    <g pointerEvents="none" fontFamily={LABEL_FONT} textAnchor="middle">
+      {layout.lines.map((l) => (
         <text
-          x={p.x}
-          y={both ? p.y - fs * 0.15 : p.y + fs * 0.35}
-          fontSize={fs}
-          fontWeight={600}
-          fill="#2d2a26"
+          key={l.kind}
+          x={layout.x}
+          y={layout.y + l.dy}
+          fontSize={l.size}
+          fontWeight={l.weight}
+          fill={LABEL_COLOR[l.kind]}
           paintOrder="stroke"
-          stroke="rgba(255,255,255,0.85)"
-          strokeWidth={fs * 0.18}
+          stroke="rgba(255,255,255,0.9)"
+          strokeWidth={l.size * 0.2}
+          strokeLinejoin="round"
         >
-          {room.name}
+          {l.text}
         </text>
-      )}
-      {room.style.showArea && (
-        <text
-          x={p.x}
-          y={both ? p.y + fs * 0.95 : p.y + fs * 0.35}
-          fontSize={fs * 0.78}
-          fill="#5d574e"
-          paintOrder="stroke"
-          stroke="rgba(255,255,255,0.85)"
-          strokeWidth={fs * 0.15}
-        >
-          {area}
-        </text>
-      )}
+      ))}
+    </g>
+  );
+}
+
+/** 指定した階の全部屋のラベル */
+export function RoomLabels({ project, floorId, mode = 'normal', zoom }: { project: Project; floorId: string; mode?: LabelMode; zoom?: number }) {
+  return (
+    <g>
+      {project.rooms
+        .filter((r) => r.floorId === floorId)
+        .map((r) => (
+          <RoomLabel key={r.id} room={r} project={project} mode={mode} zoom={zoom} />
+        ))}
     </g>
   );
 }
@@ -264,6 +264,10 @@ export interface PlanDrawingProps {
   idPrefix?: string;
   /** 部屋・壁の上、部屋名ラベルの下に描くもの（家具レイヤー） */
   overlay?: ReactNode;
+  /** false なら部屋名ラベルを描かない（編集画面はズームに合わせて別に描く） */
+  labels?: boolean;
+  /** dimensions = 寸法・畳数・面積も表示（寸法付き間取り図） */
+  labelMode?: LabelMode;
 }
 
 /** 間取り図本体（エディタ・画像出力で共通） */
@@ -274,6 +278,8 @@ export const PlanDrawing = memo(function PlanDrawing({
   highlightOpeningId,
   idPrefix = '',
   overlay,
+  labels = true,
+  labelMode = 'normal',
 }: PlanDrawingProps) {
   const rooms = useMemo(() => project.rooms.filter((r) => r.floorId === floorId), [project.rooms, floorId]);
   const walls = useMemo(() => computeWalls(rooms, floorId), [rooms, floorId]);
@@ -300,9 +306,7 @@ export const PlanDrawing = memo(function PlanDrawing({
         ))}
       </g>
       {overlay}
-      {rooms.map((r) => (
-        <RoomLabel key={r.id} room={r} project={project} />
-      ))}
+      {labels && rooms.map((r) => <RoomLabel key={r.id} room={r} project={project} mode={labelMode} />)}
     </g>
   );
 });

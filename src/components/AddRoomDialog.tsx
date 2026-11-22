@@ -5,6 +5,7 @@ import { formatArea, formatMm, areaM2, sizeFromTatami } from '../model/units';
 import { useStore } from '../store/store';
 import { addRoomNearCenter } from './Canvas';
 import { Segmented } from './fields';
+import { ScrollArea } from './ScrollArea';
 
 type SizeMode = 'default' | 'tatami' | 'm' | 'cm';
 const DIR_LABEL: Record<Side, string> = { top: '上', right: '右', bottom: '下', left: '左' };
@@ -72,7 +73,13 @@ export function AddRoomDialog() {
           if (e.key === 'Escape') close();
         }}
       >
-        <h2 id="add-room-title">{dialog.dir ? `${DIR_LABEL[dialog.dir]}側に部屋を追加` : '部屋を追加'}</h2>
+        <div className="modal-head">
+          <h2 id="add-room-title">{dialog.dir ? `${DIR_LABEL[dialog.dir]}側に部屋を追加` : '部屋を追加'}</h2>
+          <button type="button" className="modal-close" onClick={close} aria-label="閉じる">
+            ✕
+          </button>
+        </div>
+        <ScrollArea className="modal-scroll" contentClassName="modal-body">
 
         <h3>部屋の種類</h3>
         <div className="type-grid">
@@ -172,6 +179,7 @@ export function AddRoomDialog() {
             追加する
           </button>
         </div>
+        </ScrollArea>
       </div>
     </div>
   );

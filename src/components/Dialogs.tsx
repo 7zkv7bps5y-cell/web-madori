@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { parseProject } from '../model/project';
 import { useStore } from '../store/store';
+import { ScrollArea } from './ScrollArea';
 import { useView } from '../store/view';
 import { DEFAULT_IMAGE_OPTIONS, exportPng, type ImageOptions } from '../utils/exportImage';
 import { DEFAULT_PDF_OPTIONS, exportPdf, type PdfOptions } from '../utils/exportPdf';
@@ -11,8 +12,15 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} onKeyDown={(e) => e.key === 'Escape' && onClose()}>
-        <h2>{title}</h2>
-        {children}
+        <div className="modal-head">
+          <h2>{title}</h2>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="閉じる">
+            ✕
+          </button>
+        </div>
+        <ScrollArea className="modal-scroll" contentClassName="modal-body">
+          {children}
+        </ScrollArea>
       </div>
     </div>
   );

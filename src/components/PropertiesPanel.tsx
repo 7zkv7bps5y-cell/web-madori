@@ -294,6 +294,7 @@ function ProjectProps() {
   const floor = project.floors.find((f) => f.id === settings.activeFloorId);
   const multi = project.floors.length > 1;
   const showBelow = useView((s) => s.showBelow);
+  const showRoomDims = useView((s) => s.showRoomDims);
   return (
     <div className="props">
       <h2>間取り全体</h2>
@@ -346,6 +347,14 @@ function ProjectProps() {
           </div>
         </div>
       )}
+      <div className="props-group">
+        <h3>表示</h3>
+        <label className="check">
+          <input type="checkbox" checked={showRoomDims} onChange={(e) => useView.getState().set({ showRoomDims: e.target.checked })} />
+          部屋の寸法（横×縦）・畳数・面積を表示
+        </label>
+        <p className="muted small">右下の 📏 ボタンでも切り替えられます。小さい部屋は、入りきる情報だけを表示します。</p>
+      </div>
       <div className="field">
         <span className="field-label">広さの表示単位</span>
         <Segmented<AreaUnit>

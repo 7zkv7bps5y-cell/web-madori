@@ -1,6 +1,7 @@
 import { boundsOf } from '../model/geometry';
 import { sortedFloors } from '../model/project';
-import type { Project } from '../model/types';
+import type { Project, Room } from '../model/types';
+import { formatMm } from '../model/units';
 import { FurnitureLayer } from '../components/plan/FurnitureShape';
 import { PlanDrawing } from '../components/plan/PlanDrawing';
 import { downloadBlob, safeFileName } from './io';
@@ -18,6 +19,8 @@ export interface ImageOptions {
   floors: 'active' | 'all';
   /** 右上に添える注記（例: 縮尺 1/100） */
   caption?: string;
+  /** 寸法付き: 部屋ごとの寸法・畳数・面積と、建物外周の寸法線を表示 */
+  dimensions?: boolean;
 }
 
 export const DEFAULT_IMAGE_OPTIONS: ImageOptions = {
@@ -57,21 +60,91 @@ export function layoutFloors(project: Project, mode: 'active' | 'all') {
 const FONT = "'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif";
 
 /** 間取り（複数階なら横並び）の SVG 要素。画像出力・比較のサムネイルで共通 */
+/** 寸法線のための外側の余白(mm) */
+export const DIMENSION_SPACE = 1400;
+
+/**
+ * 建物外周の寸法線（上側と左側）。内側の線は部屋の区切りごと、外側の線は全長。
+ * 区切りが短く数字が入らない区間は数字を省く。
+ */
+function DimensionLines({ rooms }: { rooms: Room[] }) {
+  const b = boundsOf(rooms);
+  if (!b) return null;
+  const COLOR = '#4b463f';
+  const SW = 14;
+  const FS = 150;
+  const TICK = 110;
+  const uniq = (vals: number[]) => Array.from(new Set(vals.map((v) => Math.round(v)))).sort((a, c) => a - c);
+  const xs = uniq(rooms.flatMap((r) => [r.x, r.x + r.w]));
+  const ys = uniq(rooms.flatMap((r) => [r.y, r.y + r.h]));
+  const chainY = b.y - 650;
+  const totalY = b.y - 1150;
+  const chainX = b.x - 650;
+  const totalX = b.x - 1150;
+  const minLabel = (t: string) => t.length * FS * 0.62 + 60;
+  const hChain = (vals: number[], y: number, key: string) => (
+    <g key={key}>
+      <line x1={vals[0]} y1={y} x2={vals[vals.length - 1]} y2={y} stroke={COLOR} strokeWidth={SW} />
+      {vals.map((x) => (
+        <line key={x} x1={x} y1={y - TICK} x2={x} y2={y + TICK} stroke={COLOR} strokeWidth={SW} />
+      ))}
+      {vals.slice(1).map((x, i) => {
+        const len = x - vals[i];
+        const t = formatMm(len);
+        return len >= minLabel(t) ? (
+          <text key={x} x={(x + vals[i]) / 2} y={y - 60} fontSize={FS} textAnchor="middle" fill={COLOR} fontFamily={FONT}>
+            {t}
+          </text>
+        ) : null;
+      })}
+    </g>
+  );
+  const vChain = (vals: number[], x: number, key: string) => (
+    <g key={key}>
+      <line x1={x} y1={vals[0]} x2={x} y2={vals[vals.length - 1]} stroke={COLOR} strokeWidth={SW} />
+      {vals.map((y) => (
+        <line key={y} x1={x - TICK} y1={y} x2={x + TICK} y2={y} stroke={COLOR} strokeWidth={SW} />
+      ))}
+      {vals.slice(1).map((y, i) => {
+        const len = y - vals[i];
+        const t = formatMm(len);
+        const cy = (y + vals[i]) / 2;
+        return len >= minLabel(t) ? (
+          <text key={y} transform={`translate(${x - 60} ${cy}) rotate(-90)`} fontSize={FS} textAnchor="middle" fill={COLOR} fontFamily={FONT}>
+            {t}
+          </text>
+        ) : null;
+      })}
+    </g>
+  );
+  return (
+    <g pointerEvents="none">
+      {hChain(xs, chainY, 'hc')}
+      {hChain([b.x, b.x + b.w], totalY, 'ht')}
+      {vChain(ys, chainX, 'vc')}
+      {vChain([b.y, b.y + b.h], totalX, 'vt')}
+    </g>
+  );
+}
+
 export function FloorsDrawing({
   project,
   mode,
   showFixtures = true,
   showFurniture = true,
+  dimensions = false,
   idPrefix = '',
 }: {
   project: Project;
   mode: 'active' | 'all';
   showFixtures?: boolean;
   showFurniture?: boolean;
+  dimensions?: boolean;
   idPrefix?: string;
 }) {
   const { items, union } = layoutFloors(project, mode);
   const labeled = items.length > 1;
+  const dimSpace = dimensions ? DIMENSION_SPACE : 0;
   return (
     <g>
       {items.map(({ floor, dx }) => (
@@ -81,10 +154,12 @@ export function FloorsDrawing({
             floorId={floor.id}
             showFixtures={showFixtures}
             idPrefix={`${idPrefix}${floor.id}-`}
+            labelMode={dimensions ? 'dimensions' : 'normal'}
             overlay={showFurniture && <FurnitureLayer items={project.furniture.filter((f) => f.floorId === floor.id)} />}
           />
+          {dimensions && <DimensionLines rooms={project.rooms.filter((r) => r.floorId === floor.id)} />}
           {labeled && (
-            <text x={union.x} y={union.y - 380} fontSize={260} fontWeight={700} fill="#2d2a26" fontFamily={FONT}>
+            <text x={union.x - dimSpace} y={union.y - dimSpace - 380} fontSize={260} fontWeight={700} fill="#2d2a26" fontFamily={FONT}>
               {floor.name}
             </text>
           )}
@@ -104,8 +179,14 @@ export async function buildSvg(
   const b = layout.bounds;
   const margin = 900;
   const labelH = layout.items.length > 1 ? 600 : 0;
+  const dimSpace = opts.dimensions ? DIMENSION_SPACE : 0;
   const titleH = opts.showTitle ? 700 : 0;
-  const box = { x: b.x - margin, y: b.y - margin - titleH - labelH, w: b.w + margin * 2, h: b.h + margin * 2 + titleH + labelH };
+  const box = {
+    x: b.x - margin - dimSpace,
+    y: b.y - margin - titleH - labelH - dimSpace,
+    w: b.w + margin * 2 + dimSpace,
+    h: b.h + margin * 2 + titleH + labelH + dimSpace,
+  };
   let scale = opts.scale;
   if (box.w * scale > MAX_PIXELS || box.h * scale > MAX_PIXELS) scale = MAX_PIXELS / Math.max(box.w, box.h);
   const width = Math.round(box.w * scale);
@@ -127,10 +208,16 @@ export async function buildSvg(
     <svg xmlns="http://www.w3.org/2000/svg" width={width} height={height} viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`}>
       {opts.background === 'white' && <rect x={box.x} y={box.y} width={box.w} height={box.h} fill="#ffffff" />}
       {opts.showGrid && <path d={gridLines.join(' ')} stroke="#e2ddd2" strokeWidth={10} fill="none" />}
-      <FloorsDrawing project={project} mode={opts.floors} showFixtures={opts.showFixtures} showFurniture={opts.showFurniture} />
+      <FloorsDrawing
+        project={project}
+        mode={opts.floors}
+        showFixtures={opts.showFixtures}
+        showFurniture={opts.showFurniture}
+        dimensions={opts.dimensions}
+      />
       {opts.showTitle && (
         <g fontFamily={FONT} fill="#2d2a26">
-          <text x={b.x} y={box.y + margin * 0.9} fontSize={300} fontWeight={700}>
+          <text x={box.x + margin} y={box.y + margin * 0.9} fontSize={300} fontWeight={700}>
             {project.projectName}
             {planName}
             {floorName}

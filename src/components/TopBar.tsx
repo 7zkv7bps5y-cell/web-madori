@@ -11,6 +11,9 @@ export interface ProjectActions {
   exportImage: () => void;
   exportPdf: () => void;
   shareUrl: () => void;
+  openGuide: () => void;
+  /** 保存・出力画面（まとめて保存） */
+  openSave: () => void;
   openTemplate: () => void;
   openPlans: () => void;
 }
@@ -98,6 +101,9 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
 
   const fileItems = (
     <>
+      <button role="menuitem" type="button" onClick={actions.openSave}>
+        <b>保存・出力（まとめて保存）…</b>
+      </button>
       <button role="menuitem" type="button" onClick={actions.newProject}>
         新規作成
       </button>
@@ -130,8 +136,11 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
         間取りデータを貼り付け
       </button>
       <hr />
+      <button role="menuitem" type="button" onClick={actions.openGuide}>
+        操作ガイド（かんたん説明）
+      </button>
       <a role="menuitem" href="/guide/" target="_blank" rel="noopener">
-        使い方ガイド
+        使い方ガイド（くわしい説明）
       </a>
       <a role="menuitem" href="/">
         トップページへ
@@ -163,9 +172,14 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
       {!compact && <span className="save-state muted small">{saveState}</span>}
       <div className="spacer" />
       {compact ? (
-        <Menu label={<span aria-label="メニュー">☰</span>} className="right">
-          {fileItems}
-        </Menu>
+        <>
+          <button type="button" className="primary save-btn" onClick={actions.openSave} aria-label="保存・出力">
+            保存
+          </button>
+          <Menu label={<span aria-label="メニュー">☰</span>} className="right">
+            {fileItems}
+          </Menu>
+        </>
       ) : (
         <>
           <div className="btn-group">
@@ -181,7 +195,7 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
             <button type="button" onClick={actions.openFile}>
               開く
             </button>
-            <button type="button" className="primary" onClick={actions.saveFile} title="ファイルに保存 (Ctrl+S)">
+            <button type="button" className="primary" onClick={actions.openSave} title="保存・出力 (Ctrl+S)">
               保存
             </button>
             <Menu label="出力 ▾" className="right">

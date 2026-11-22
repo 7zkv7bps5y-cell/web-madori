@@ -29,7 +29,7 @@ import { activeRooms, useStore } from '../store/store';
 import { clampZoom, useView } from '../store/view';
 import { floorBelow } from '../model/project';
 import { FurnitureLayer } from './plan/FurnitureShape';
-import { PlanDrawing } from './plan/PlanDrawing';
+import { PlanDrawing, RoomLabels } from './plan/PlanDrawing';
 
 type Gesture =
   | { kind: 'pan'; sx: number; sy: number; panX: number; panY: number; moved: boolean }
@@ -136,7 +136,7 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
   const tool = useStore((s) => s.tool);
   const mode = useStore((s) => s.mode);
   const [hoverRoomId, setHoverRoomId] = useState<string | null>(null);
-  const { zoom, panX, panY, width, height, fitSeq, showDims, showFlow, showBelow } = useView();
+  const { zoom, panX, panY, width, height, fitSeq, showDims, showFlow, showBelow, showRoomDims } = useView();
   const setView = useView((s) => s.set);
   const gesture = useRef<Gesture | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -647,13 +647,14 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
         {/* 下の階を薄く表示（上下の階の位置合わせ用） */}
         {below && showBelow && (
           <g opacity={0.25} pointerEvents="none">
-            <PlanDrawing project={project} floorId={below.id} showFixtures={false} idPrefix="below-" />
+            <PlanDrawing project={project} floorId={below.id} showFixtures={false} idPrefix="below-" labels={false} />
           </g>
         )}
         <PlanDrawing
           project={project}
           floorId={floorId}
           highlightOpeningId={selOpening?.id}
+          labels={false}
           overlay={
             // 家具（間取り作成モードでは薄く表示し、操作しない）
             <g opacity={planMode ? 0.35 : 1} pointerEvents="none">
@@ -661,6 +662,8 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
             </g>
           }
         />
+        {/* 部屋名・広さ（・寸法）。画面上の大きさ基準なので、ズームしても読みやすい */}
+        <RoomLabels project={project} floorId={floorId} zoom={zoom} mode={showRoomDims ? 'dimensions' : 'normal'} />
 
         {/* 当たり判定レイヤー */}
         <g className={tool.kind === 'placeOpening' || !planMode ? 'no-hit' : ''}>
@@ -723,7 +726,7 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
             <g fontSize={fontPx} fill={ACCENT} fontWeight={700} textAnchor="middle" pointerEvents="none" fontFamily="system-ui,sans-serif">
               <text
                 x={selRoom.x + selRoom.w / 2}
-                y={selRoom.y + px(touchUi ? 0 : 0) + fontPx * 1.3}
+                y={selRoom.y + handleSize * 0.5 + fontPx * 1.2}
                 paintOrder="stroke"
                 stroke="#fff"
                 strokeWidth={fontPx * 0.3}
@@ -731,7 +734,7 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
                 {formatMm(selRoom.w)}
               </text>
               <text
-                transform={`translate(${selRoom.x + fontPx * 1.3} ${selRoom.y + selRoom.h / 2}) rotate(-90)`}
+                transform={`translate(${selRoom.x + handleSize * 0.5 + fontPx * 1.2} ${selRoom.y + selRoom.h / 2}) rotate(-90)`}
                 paintOrder="stroke"
                 stroke="#fff"
                 strokeWidth={fontPx * 0.3}
