@@ -28,3 +28,33 @@ export function initAds(root: ParentNode = document) {
     }
   }
 }
+
+/** 広告なしプラン（有料）の利用者かどうかの記憶。エディタでサーバーのプランを確認したときに更新する */
+const ADS_OFF_KEY = 'web-madori:ads-off';
+
+export function rememberAdsOff(off: boolean) {
+  try {
+    if (off) localStorage.setItem(ADS_OFF_KEY, '1');
+    else localStorage.removeItem(ADS_OFF_KEY);
+  } catch {
+    /* 保存できない環境 */
+  }
+}
+
+export function adsOffRemembered(): boolean {
+  try {
+    return localStorage.getItem(ADS_OFF_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * プランに応じて広告を出す・消す。
+ * 有料プラン（showAds = false）では広告を読み込まず、表示中の枠も隠す。
+ */
+export function applyAdsForPlan(showAds: boolean) {
+  rememberAdsOff(!showAds);
+  if (showAds) initAds();
+  else document.body.classList.remove('ads-on');
+}

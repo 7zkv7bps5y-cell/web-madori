@@ -88,6 +88,26 @@ Linux の OS ロケールが POSIX（ASCII のみ）だと、Chromium は日本�
 既定名「download」で保存する。アプリ側の不具合ではない（UTF-8 環境の PC・スマホでは日本語名で保存される）。
 Playwright で確認するときは `chromium.launch({ env: { ...process.env, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' } })` で起動する。
 
+## クラウド保存・プラン・広告・商品紹介（収益化の土台）
+
+利用開始の手順は [docs/cloud-setup.md](docs/cloud-setup.md)。Supabase の設定をするまでは「準備中」と表示される。
+
+| 部分 | ファイル |
+| --- | --- |
+| プラン設定（唯一の定義: 無料 3 件・有料 30 件・広告・価格） | `src/billing/plans.ts` |
+| データベース（プラン・有料権限・保存した間取り・RLS・保存上限のトリガー） | `supabase/migrations/20261122000000_cloud_storage.sql` |
+| データベースのテスト（ローカル PostgreSQL） | `scripts/test-db.sh`、`supabase/tests/` |
+| クラウド保存の窓口（Supabase 版 / テスト専用の模擬版） | `src/cloud/` |
+| ログイン状態・保存一覧 | `src/store/account.ts`、`src/components/CloudDialog.tsx` |
+| 広告（プランで出し分け） | `src/site/ads.ts` |
+| 商品カタログ・類似商品・関連商品 | `src/products/`、`src/components/ProductSuggestions.tsx` |
+
+- 保存上限は「同時に保持できる件数」。新規保存・複製だけが数え、上書きは数えない。月が変わっても回復しない。データベースのトリガーで強制する
+- 有料の権限は `entitlements` 表で管理し、利用者は変更できない。テスト用の権限（`source = 'test'`）は開発用データベースでのみ有効
+- クラウド保存に失敗しても、編集中の間取りには影響しない（ローカルの自動保存も続く）
+- PNG・PDF・.floorplan の出力に回数制限はない。Office 系（Excel など）の出力は現時点で存在しない
+- テスト用ビルド: `VITE_DEV_MOCK_CLOUD=1 npx vite build --mode e2e --outDir dist-e2e`（模擬クラウドは本番ビルドに含まれない）
+
 ## データ設計の要点
 
 - 単位はすべて mm。グリッドは 455mm（半間 910mm の半分。設定で変更可）。1畳 = 1.62㎡（不動産表示規約）。

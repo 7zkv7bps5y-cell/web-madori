@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "products": [
+    {
+      "id": "manual-0001",
+      "name": "（記入例）セミダブルベッド 幅120cm",
+      "category": "bed",
+      "dimensions": { "w": 1200, "d": 1950, "h": 450 },
+      "sizeStandards": ["semi-double"],
+      "imageUrl": "https://example.com/images/bed.jpg",
+      "priceJpy": 39800,
+      "shop": "ショップ名",
+      "url": "https://example.com/products/bed",
+      "affiliateUrl": "https://example.com/affiliate?id=xxxx",
+      "source": "manual",
+      "updatedAt": "2026-11-22T00:00:00+09:00"
+    }
+  ]
+}

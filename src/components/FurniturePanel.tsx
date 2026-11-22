@@ -6,6 +6,7 @@ import type { Furniture, Project } from '../model/types';
 import { normalizeAngle, useStore } from '../store/store';
 import { useView } from '../store/view';
 import { NumberField, TextField, toUnit } from './fields';
+import { ProductSuggestions } from './ProductSuggestions';
 
 export function issueText(issue: FurnitureIssue, p: Project): string {
   switch (issue.kind) {
@@ -154,6 +155,8 @@ export function FurnitureProps({ item }: { item: Furniture }) {
           <FlowIssueList issues={flow} selectable={false} />
         </div>
       )}
+
+      <ProductSuggestions item={item} />
 
       <div className="actions">
         <button type="button" onClick={() => st.duplicateFurniture(item.id)}>

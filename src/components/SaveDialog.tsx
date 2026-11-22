@@ -24,7 +24,7 @@ function Preview({ project, kind }: { project: ReturnType<typeof useStore.getSta
 }
 
 /** 保存・出力画面: 形式の選択（初期はすべて ON）・プレビュー・保存実行を 1 画面で */
-export function SaveDialog({ onClose, compact }: { onClose: () => void; compact: boolean }) {
+export function SaveDialog({ onClose, compact, onOpenCloud }: { onClose: () => void; compact: boolean; onOpenCloud?: () => void }) {
   // 画面を開いた時点のデータを 1 つだけ使う（全形式が同じ内容になる）
   const [project] = useState(() => useStore.getState().project);
   const notify = useStore((s) => s.notify);
@@ -56,6 +56,15 @@ export function SaveDialog({ onClose, compact }: { onClose: () => void; compact:
       {inApp && (
         <p className="save-warning" role="alert">
           {inApp} のアプリ内ブラウザでは、ファイルを保存できないことがあります。うまく保存できないときは、画面のメニューから「Safari で開く」「ブラウザで開く」を選んでから保存してください。
+        </p>
+      )}
+      {onOpenCloud && (
+        <p className="save-cloud-link small">
+          別の端末で続きを編集したいときは
+          <button type="button" className="link" onClick={onOpenCloud}>
+            クラウド保存
+          </button>
+          も使えます。
         </p>
       )}
       {/* 保存される範囲（複数案のときは、画像・PDF が編集中の案だけであることを明示） */}

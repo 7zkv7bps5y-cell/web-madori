@@ -1,5 +1,5 @@
 import './site.css';
-import { initAds } from './ads';
+import { adsOffRemembered, initAds } from './ads';
 
 // スマートフォン用メニュー
 const toggle = document.querySelector<HTMLButtonElement>('.nav-toggle');
@@ -31,4 +31,5 @@ if (form) {
   }
 }
 
-initAds();
+// 広告なしプランの利用者（エディタで確認済み）には広告を出さない
+if (!adsOffRemembered()) initAds();

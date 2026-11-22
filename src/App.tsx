@@ -11,7 +11,9 @@ import { PlansDialog } from './components/PlansDialog';
 import { SaveDialog } from './components/SaveDialog';
 import { ScrollArea } from './components/ScrollArea';
 import { TemplatesDialog } from './components/TemplatesDialog';
-import { initAds } from './site/ads';
+import { applyAdsForPlan } from './site/ads';
+import { currentPlan, useAccount } from './store/account';
+import { CloudDialog } from './components/CloudDialog';
 import { TopBar, type ProjectActions } from './components/TopBar';
 import { furnitureDef } from './model/furnitureCatalog';
 import { openingDef } from './model/catalog';
@@ -208,6 +210,7 @@ export default function App() {
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
+  const [cloudOpen, setCloudOpen] = useState(false);
   // 初回だけ操作ガイドを表示（共有URLやテンプレートから開いた場合も同じ）
   const [guideOpen, setGuideOpen] = useState(() => !guideDone());
   const [shareOpen, setShareOpen] = useState(false);
@@ -244,10 +247,26 @@ export default function App() {
         autosave(useStore.getState().project);
       });
     }
-    if (params.toString() || window.location.hash) window.history.replaceState(null, '', window.location.pathname);
+    // このアプリ用の指定（template / new / 共有 #p=）だけを URL から消す。
+    // ログイン用リンクの code などは認証処理が読むので残す
+    const own = ['template', 'new'];
+    if (own.some((k) => params.has(k)) || token) {
+      for (const k of own) params.delete(k);
+      const rest = params.toString();
+      window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : '') + (token ? '' : window.location.hash));
+    }
     useView.getState().requestFit();
-    initAds();
   }, []);
+
+  // アカウント（クラウド保存・プラン）。プランが分かってから広告を出す（有料プランは広告なし）
+  const accReady = useAccount((s) => s.ready);
+  const accStatus = useAccount((s) => s.status);
+  useEffect(() => {
+    void useAccount.getState().init();
+  }, []);
+  useEffect(() => {
+    if (accReady) applyAdsForPlan(currentPlan(accStatus).showAds);
+  }, [accReady, accStatus]);
 
   // 自動保存（変更から 0.8 秒後）
   useEffect(() => {
@@ -301,6 +320,7 @@ export default function App() {
     exportPdf: () => setPdfOpen(true),
     openGuide: () => setGuideOpen(true),
     openSave: () => setSaveOpen(true),
+    openCloud: () => setCloudOpen(true),
     shareUrl: () => setShareOpen(true),
   };
 
@@ -465,7 +485,17 @@ export default function App() {
           onTemplate={() => setTemplatesOpen(true)}
         />
       )}
-      {saveOpen && <SaveDialog compact={mobile} onClose={() => setSaveOpen(false)} />}
+      {saveOpen && (
+        <SaveDialog
+          compact={mobile}
+          onClose={() => setSaveOpen(false)}
+          onOpenCloud={() => {
+            setSaveOpen(false);
+            setCloudOpen(true);
+          }}
+        />
+      )}
+      {cloudOpen && <CloudDialog onClose={() => setCloudOpen(false)} onOpenLocalSave={() => setSaveOpen(true)} />}
       {pdfOpen && <ExportPdfDialog onClose={() => setPdfOpen(false)} />}
       {shareOpen && <ShareDialog onClose={() => setShareOpen(false)} />}
       {plansOpen && <PlansDialog onClose={() => setPlansOpen(false)} />}

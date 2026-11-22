@@ -14,6 +14,8 @@ export interface ProjectActions {
   openGuide: () => void;
   /** 保存・出力画面（まとめて保存） */
   openSave: () => void;
+  /** クラウド保存 */
+  openCloud: () => void;
   openTemplate: () => void;
   openPlans: () => void;
 }
@@ -103,6 +105,9 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
     <>
       <button role="menuitem" type="button" onClick={actions.openSave}>
         <b>保存・出力（まとめて保存）…</b>
+      </button>
+      <button role="menuitem" type="button" onClick={actions.openCloud}>
+        クラウド保存（保存済みの間取り）…
       </button>
       <button role="menuitem" type="button" onClick={actions.newProject}>
         新規作成
