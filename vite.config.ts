@@ -23,7 +23,13 @@ const PAGE_INPUTS: Record<string, string> = {
  * - VITE_SITE_URL があれば canonical / og:url / og:image と sitemap.xml を出力
  * - robots.txt を出力
  */
-function sitePlugin(siteUrl: string | undefined, noindex: boolean): Plugin {
+/** AdSense のクライアント ID（ca-pub-数字）。形式が違えば使わない */
+export function adsenseClient(raw: string | undefined): string | null {
+  const v = raw?.trim() ?? '';
+  return /^ca-pub-\d{10,20}$/.test(v) ? v : null;
+}
+
+function sitePlugin(siteUrl: string | undefined, noindex: boolean, adsense: string | null): Plugin {
   const base = siteUrl?.replace(/\/+$/, '');
   return {
     name: 'web-madori-site',
@@ -34,6 +40,10 @@ function sitePlugin(siteUrl: string | undefined, noindex: boolean): Plugin {
           .replace('<!--site:header-->', SITE_HEADER)
           .replace('<!--site:footer-->', SITE_FOOTER)
           .replace(/<!--site:ad:([\w-]+)-->/g, (_, name: string) => adSlot(name));
+        if (adsense) {
+          // AdSense のサイト確認用
+          out = out.replace('</head>', `  <meta name="google-adsense-account" content="${adsense}" />\n  </head>`);
+        }
         if (noindex) {
           // 試験公開: 検索エンジンに載せない
           out = out.replace('</head>', '  <meta name="robots" content="noindex, nofollow" />\n  </head>');
@@ -55,6 +65,10 @@ function sitePlugin(siteUrl: string | undefined, noindex: boolean): Plugin {
         ? 'User-agent: *\nDisallow: /'
         : ['User-agent: *', 'Allow: /', base ? `Sitemap: ${base}/sitemap.xml` : ''].filter(Boolean).join('\n');
       this.emitFile({ type: 'asset', fileName: 'robots.txt', source: robots + '\n' });
+      if (adsense) {
+        // 広告の販売者の確認用（AdSense で必須）
+        this.emitFile({ type: 'asset', fileName: 'ads.txt', source: `google.com, ${adsense.replace(/^ca-/, '')}, DIRECT, f08c47fec0942fa0\n` });
+      }
       if (base) {
         const urls = SITE_PAGES.map((p) => `  <url><loc>${base}${p}</loc></url>`).join('\n');
         this.emitFile({
@@ -70,7 +84,7 @@ function sitePlugin(siteUrl: string | undefined, noindex: boolean): Plugin {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   return {
-    plugins: [react(), sitePlugin(env.VITE_SITE_URL, env.VITE_NOINDEX === '1')],
+    plugins: [react(), sitePlugin(env.VITE_SITE_URL, env.VITE_NOINDEX === '1', adsenseClient(env.VITE_ADSENSE_CLIENT))],
     build: {
       rollupOptions: {
         input: Object.fromEntries(Object.entries(PAGE_INPUTS).map(([k, v]) => [k, resolve(process.cwd(), v)])),

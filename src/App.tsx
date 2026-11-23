@@ -262,7 +262,14 @@ export default function App() {
   const accReady = useAccount((s) => s.ready);
   const accStatus = useAccount((s) => s.status);
   useEffect(() => {
-    void useAccount.getState().init();
+    void useAccount
+      .getState()
+      .init()
+      .then(() => {
+        // ログイン用リンクの戻りでエラーがあった場合は知らせる（例: 期限切れ・別のブラウザで開いた）
+        const err = useAccount.getState().error;
+        if (err) useStore.getState().notify(err, 'error');
+      });
   }, []);
   useEffect(() => {
     if (accReady) applyAdsForPlan(currentPlan(accStatus).showAds);

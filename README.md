@@ -90,7 +90,7 @@ Playwright で確認するときは `chromium.launch({ env: { ...process.env, LA
 
 ## クラウド保存・プラン・広告・商品紹介（収益化の土台）
 
-利用開始の手順は [docs/cloud-setup.md](docs/cloud-setup.md)。Supabase の設定をするまでは「準備中」と表示される。
+利用開始の手順は [docs/cloud-setup.md](docs/cloud-setup.md)、監査結果と準備状況は [docs/launch-readiness.md](docs/launch-readiness.md)。Supabase の設定をするまでは「準備中」と表示される。
 
 | 部分 | ファイル |
 | --- | --- |

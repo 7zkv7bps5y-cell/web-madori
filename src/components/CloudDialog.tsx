@@ -18,6 +18,7 @@ export function CloudDialog({ onClose, onOpenLocalSave }: { onClose: () => void;
   const notify = useStore((s) => s.notify);
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
+  const [code, setCode] = useState('');
   const [name, setName] = useState(project.projectName);
 
   useEffect(() => {
@@ -90,9 +91,48 @@ export function CloudDialog({ onClose, onOpenLocalSave }: { onClose: () => void;
           </li>
         </ul>
         {sent ? (
-          <p className="cloud-sent" role="status">
-            {email} にログイン用のメールを送りました。メールのリンクを開くとログインできます。
-          </p>
+          <>
+            <p className="cloud-sent" role="status">
+              {email} にログイン用のメールを送りました。<b>この端末のこのブラウザ</b>でメールのリンクを開くとログインできます。
+              別の端末でメールを見ている場合は、メールに書かれた 6 桁のコードを下に入力してください。
+            </p>
+            <form
+              className="cloud-login"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                await acc.verifyCode(email, code);
+              }}
+            >
+              <label className="field">
+                <span className="field-label">6 桁のコード</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  required
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                />
+              </label>
+              <div className="actions">
+                <button type="submit" className="primary" disabled={!!acc.busy || code.length !== 6}>
+                  {acc.busy ?? 'コードでログイン'}
+                </button>
+                <button
+                  type="button"
+                  disabled={!!acc.busy}
+                  onClick={() => {
+                    setSent(false);
+                    setCode('');
+                  }}
+                >
+                  メールアドレスを入れ直す
+                </button>
+              </div>
+            </form>
+          </>
         ) : (
           <form
             className="cloud-login"
@@ -217,6 +257,34 @@ export function CloudDialog({ onClose, onOpenLocalSave }: { onClose: () => void;
         </p>
       )}
 
+      {acc.conflict && (
+        <div className="cloud-conflict" role="alert">
+          <p>
+            「<b>{acc.conflict.name}</b>」は、ほかの端末（またはブラウザ）で後から更新されています。上書きすると、そちらの変更は失われます。
+          </p>
+          <div className="actions">
+            <button type="button" disabled={busy} onClick={() => void openItem(acc.conflict!.id)}>
+              最新の内容を開く
+            </button>
+            <button
+              type="button"
+              className="danger"
+              disabled={busy}
+              onClick={async () => {
+                const c = acc.conflict!;
+                if (await acc.overwrite(c.id, c.name, useStore.getState().project, true)) notify(`「${c.name}」に上書き保存しました。`);
+              }}
+            >
+              それでも上書きする
+            </button>
+            <button type="button" disabled={busy} onClick={() => acc.clearConflict()}>
+              やめる
+            </button>
+          </div>
+          <p className="muted small">今の編集内容を残したいときは「保存」からファイルに保存するか、「別の間取りとして保存する」で新しく保存できます。</p>
+        </div>
+      )}
+
       <section>
         <h3>保存済みの間取り</h3>
         {acc.items.length === 0 ? (
@@ -257,8 +325,8 @@ export function CloudDialog({ onClose, onOpenLocalSave }: { onClose: () => void;
                     type="button"
                     disabled={busy}
                     onClick={async () => {
-                      const p = await useAccount.getState().backend?.load(it.id).catch(() => null);
-                      if (p) saveProjectFile(p);
+                      const r = await useAccount.getState().backend?.load(it.id).catch(() => null);
+                      if (r) saveProjectFile(r.project);
                       else notify('ダウンロードできませんでした。', 'error');
                     }}
                   >

@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { planConfig } from '../billing/plans';
 import { parseProject, serializeProject } from '../model/project';
 import type { Project } from '../model/types';
-import { CloudError, QUOTA_MESSAGE, type CloudBackend, type CloudItem, type CloudStatus, type CloudUser } from './types';
+import { CloudError, CONFLICT_MESSAGE, QUOTA_MESSAGE, type CloudBackend, type CloudItem, type CloudStatus, type CloudUser } from './types';
 
 const COLUMNS = 'id, name, created_at, updated_at';
 
@@ -57,6 +57,11 @@ export class SupabaseBackend implements CloudBackend {
     if (error) throw new CloudError('unknown', `ログイン用メールを送れませんでした。（${error.message}）`);
   }
 
+  async verifyEmailCode(email: string, code: string) {
+    const { error } = await this.client.auth.verifyOtp({ email, token: code.trim(), type: 'email' });
+    if (error) throw new CloudError('not_signed_in', 'コードが正しくないか、有効期限が切れています。もう一度メールを送ってください。');
+  }
+
   async signOut() {
     await this.client.auth.signOut();
   }
@@ -86,13 +91,14 @@ export class SupabaseBackend implements CloudBackend {
     return (data as Row[]).map(toItem);
   }
 
-  async load(id: string): Promise<Project> {
-    const { data, error } = await this.client.from('floorplans').select('data').eq('id', id).single();
+  async load(id: string) {
+    const { data, error } = await this.client.from('floorplans').select(`${COLUMNS}, data`).eq('id', id).single();
     if (error) throw mapSupabaseError(error);
+    const row = data as Row & { data: unknown };
     // 読み込みはファイルの「開く」と同じ検証を通す（旧形式にも対応）
-    const r = parseProject(JSON.stringify((data as { data: unknown }).data));
+    const r = parseProject(JSON.stringify(row.data));
     if (!r.ok) throw new CloudError('invalid_data', r.error);
-    return r.project;
+    return { project: r.project, item: toItem(row) };
   }
 
   async create(name: string, project: Project): Promise<CloudItem> {
@@ -105,14 +111,18 @@ export class SupabaseBackend implements CloudBackend {
     return toItem(data as Row);
   }
 
-  async overwrite(id: string, name: string, project: Project): Promise<CloudItem> {
-    const { data, error } = await this.client
-      .from('floorplans')
-      .update({ name, data: toCloudJson(project), format_version: 2 })
-      .eq('id', id)
-      .select(COLUMNS)
-      .single();
-    if (error) throw mapSupabaseError(error);
+  async overwrite(id: string, name: string, project: Project, expectedUpdatedAt?: string): Promise<CloudItem> {
+    let q = this.client.from('floorplans').update({ name, data: toCloudJson(project), format_version: 2 }).eq('id', id);
+    // 読み込んだ後にほかの端末で更新されていたら、条件に合う行がなく更新されない
+    if (expectedUpdatedAt) q = q.eq('updated_at', expectedUpdatedAt);
+    const { data, error } = await q.select(COLUMNS).single();
+    if (error) {
+      if (expectedUpdatedAt && error.code === 'PGRST116') {
+        const { data: still } = await this.client.from('floorplans').select('id').eq('id', id).maybeSingle();
+        if (still) throw new CloudError('conflict', CONFLICT_MESSAGE);
+      }
+      throw mapSupabaseError(error);
+    }
     return toItem(data as Row);
   }
 

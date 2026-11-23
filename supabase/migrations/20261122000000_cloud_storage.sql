@@ -26,7 +26,9 @@ insert into public.plans (id, name, cloud_limit, show_ads, monthly_price_jpy, so
 
 alter table public.plans enable row level security;
 create policy "plans_readable" on public.plans for select using (true);
-revoke insert, update, delete on public.plans from anon, authenticated;
+-- Supabase は既定で全ロールに表の全権限（TRUNCATE なども）を与える。TRUNCATE は RLS が効かないため必ず外す
+revoke all on public.plans from anon, authenticated;
+grant select on public.plans to anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 有料プランの権限（決済サービス連携・運営者の手動付与で service_role が書き込む）
@@ -44,7 +46,8 @@ create table public.entitlements (
 alter table public.entitlements enable row level security;
 -- 自分の権限は読めるが、作成・変更・削除のポリシーは作らない（= 利用者は変更できない）
 create policy "entitlements_select_own" on public.entitlements for select using (user_id = auth.uid());
-revoke insert, update, delete on public.entitlements from anon, authenticated;
+revoke all on public.entitlements from anon, authenticated;
+grant select on public.entitlements to authenticated;
 
 -- 有効なプラン（内部用。他人のプランを調べられないよう、利用者には実行権限を与えない）
 create function public.effective_plan(uid uuid) returns text
@@ -82,7 +85,8 @@ create policy "floorplans_select_own" on public.floorplans for select using (use
 create policy "floorplans_insert_own" on public.floorplans for insert with check (user_id = auth.uid());
 create policy "floorplans_update_own" on public.floorplans for update using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "floorplans_delete_own" on public.floorplans for delete using (user_id = auth.uid());
-revoke all on public.floorplans from anon;
+revoke all on public.floorplans from anon, authenticated;
+grant select, insert, update, delete on public.floorplans to authenticated;
 
 -- 新規作成時: 保存件数の上限を確認（同じユーザーの同時保存でも超えないようロックする）
 create function public.enforce_cloud_quota() returns trigger

@@ -141,4 +141,36 @@ do $$ begin
   if (select count(*) from public.floorplans where user_id = '11111111-1111-1111-1111-111111111111') <> 0 then raise exception 'cascade failed'; end if;
 end $$;
 \echo 'OK 13: deleting the account deletes its data'
+
+-- ===== 14. 表の一括削除（TRUNCATE）などの権限がない（RLS が効かない操作） =====
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'u2', false);
+select pg_temp.expect_error($$truncate public.floorplans$$, 'permission denied');
+select pg_temp.expect_error($$truncate public.entitlements$$, 'permission denied');
+select pg_temp.expect_error($$truncate public.plans$$, 'permission denied');
+reset role;
+do $$ begin
+  if exists (
+    select 1 from information_schema.role_table_grants
+    where grantee in ('anon', 'authenticated') and table_schema = 'public'
+      and privilege_type in ('TRUNCATE', 'REFERENCES', 'TRIGGER')
+  ) then raise exception 'dangerous privileges remain'; end if;
+end $$;
+\echo 'OK 14: no TRUNCATE/REFERENCES/TRIGGER for anon/authenticated'
+
+-- ===== 15. 更新日時を条件にした上書き（ほかの端末での更新の検出）=====
+insert into auth.users (id) values ('44444444-4444-4444-4444-444444444444');
+set role authenticated;
+select set_config('request.jwt.claim.sub', '44444444-4444-4444-4444-444444444444', false);
+insert into public.floorplans (name, data) values ('家', :'doc');
+select set_config('test.loaded_at', updated_at::text, false) from public.floorplans where name = '家';
+select pg_sleep(0.01);
+update public.floorplans set name = '家（スマホ）' where name = '家';
+do $$ declare n int; begin
+  update public.floorplans set name = '家（PC）' where updated_at = current_setting('test.loaded_at')::timestamptz;
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'stale overwrite should match 0 rows'; end if;
+end $$;
+reset role;
+\echo 'OK 15: conditional overwrite detects updates from another device'
 \echo 'ALL DATABASE TESTS PASSED'

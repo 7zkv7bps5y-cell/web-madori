@@ -1,7 +1,8 @@
 /**
  * 商品カタログ（家具・関連商品の紹介用）。家具の基本データ（furnitureCatalog）とは別に管理する。
  *
- * - 現在は手動登録（public/products.json）。ファイルがなければ商品紹介は表示しない
+ * - 現在は手動登録（例: public/products.json を置き、VITE_PRODUCT_CATALOG_URL=/products.json）。
+ *   未設定・ファイルなしなら商品紹介は表示しない
  * - 将来 Amazon・楽天市場などと連携する場合も、この形式に変換して読み込む（source に取得元を記録）
  * - 商品情報は各ショップの利用規約・API の利用条件に従って取得すること（無許可のスクレイピングはしない）
  * - 架空の商品を実在する商品として登録しないこと
@@ -104,12 +105,18 @@ export function parseProductCatalog(raw: unknown): CatalogParse {
 
 let cache: Promise<Product[]> | null = null;
 
+/** 商品カタログの場所（VITE_PRODUCT_CATALOG_URL）。未設定なら商品紹介を使わない（読み込みもしない） */
+export function productCatalogUrl(): string | null {
+  const u = (import.meta.env.VITE_PRODUCT_CATALOG_URL as string | undefined)?.trim();
+  return u ? u : null;
+}
+
 /**
- * 商品カタログを読み込む（/products.json）。なければ空。
- * 形式が正しくない場合も商品紹介を出さない（開発時はコンソールに理由を出す）。
+ * 商品カタログを読み込む。場所が未設定・ファイルがない・形式が正しくない場合は空（商品紹介を出さない）。
  */
-export function loadProductCatalog(fetcher: typeof fetch = fetch): Promise<Product[]> {
-  cache ??= fetcher('/products.json', { cache: 'no-cache' })
+export function loadProductCatalog(fetcher: typeof fetch = fetch, url = productCatalogUrl()): Promise<Product[]> {
+  if (!url) return Promise.resolve([]);
+  cache ??= fetcher(url, { cache: 'no-cache' })
     .then(async (res) => {
       if (!res.ok) return [];
       if (!(res.headers.get('content-type') ?? '').includes('json')) return [];

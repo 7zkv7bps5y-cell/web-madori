@@ -28,7 +28,7 @@ describe('クラウド保存（模擬: データベースと同じ規則）', ()
     for (const n of ['A', 'B', 'C']) items.push(await b.create(n, tpl()));
     const edited = { ...tpl(), projectName: '上書き後' };
     await b.overwrite(items[0].id, 'A', edited);
-    expect((await b.load(items[0].id)).projectName).toBe('上書き後');
+    expect((await b.load(items[0].id)).project.projectName).toBe('上書き後');
     expect((await b.status()).used).toBe(3);
   });
 
@@ -86,7 +86,7 @@ describe('クラウド保存（模擬: データベースと同じ規則）', ()
     const b = await signedIn();
     const p = TEMPLATES.find((t) => t.id === '4ldk-2f')!.create();
     const item = await b.create('2階建て', p);
-    const loaded = await b.load(item.id);
+    const { project: loaded } = await b.load(item.id);
     expect(loaded.rooms).toEqual(p.rooms);
     expect(loaded.floors.length).toBe(2);
   });
@@ -123,5 +123,88 @@ describe('Supabase 連携', () => {
 
   it('設定がなければ「未設定」（動いているように見せない）', () => {
     expect(cloudMode()).toBe('unconfigured');
+  });
+});
+
+import { resetAccountForTesting, useAccount } from '../store/account';
+
+/** 2 つの端末が同じサーバーを共有している状態（模擬） */
+function twoDevices() {
+  const mem = new Map<string, string>();
+  const storage = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
+  let tick = Date.parse('2026-11-23T00:00:00Z');
+  const now = () => new Date((tick += 1000));
+  return [new MockBackend({ storage, now }), new MockBackend({ storage, now })] as const;
+}
+
+describe('複数端末・ログイン', () => {
+  it('別の端末から同じデータを開いて再編集できる', async () => {
+    const [pc, phone] = twoDevices();
+    await pc.signInWithEmail('a@example.com');
+    const saved = await pc.create('家', tpl());
+    await phone.signInWithEmail('a@example.com');
+    expect((await phone.list()).map((i) => i.id)).toEqual([saved.id]);
+    const { project, item } = await phone.load(saved.id);
+    await phone.overwrite(saved.id, '家', { ...project, projectName: 'スマホで編集' }, item.updatedAt);
+    expect((await pc.load(saved.id)).project.projectName).toBe('スマホで編集');
+  });
+
+  it('読み込んだ後にほかの端末で更新されていたら上書きしない（conflict）。確認後の強制上書きは可能', async () => {
+    const [pc, phone] = twoDevices();
+    await pc.signInWithEmail('a@example.com');
+    const saved = await pc.create('家', tpl());
+    const pcLoaded = await pc.load(saved.id);
+    await phone.overwrite(saved.id, '家', { ...tpl(), projectName: 'スマホの変更' }); // 後から更新
+    await expect(pc.overwrite(saved.id, '家', { ...tpl(), projectName: 'PCの変更' }, pcLoaded.item.updatedAt)).rejects.toMatchObject({
+      code: 'conflict',
+    });
+    expect((await pc.load(saved.id)).project.projectName).toBe('スマホの変更');
+    await pc.overwrite(saved.id, '家', { ...tpl(), projectName: 'PCの変更' }); // 確認後
+    expect((await phone.load(saved.id)).project.projectName).toBe('PCの変更');
+  });
+
+  it('メールの 6 桁コードでログインできる（模擬）。形式が違えば拒否', async () => {
+    const b = new MockBackend();
+    await expect(b.verifyEmailCode('a@example.com', '12ab')).rejects.toMatchObject({ code: 'not_signed_in' });
+    await b.verifyEmailCode('a@example.com', '123456');
+    expect((await b.getUser())?.email).toBe('a@example.com');
+  });
+});
+
+describe('アカウント状態（画面側）', () => {
+  const setup = async () => {
+    resetAccountForTesting();
+    const b = new MockBackend();
+    await b.signInWithEmail('a@example.com');
+    useAccount.setState({ backend: b, ready: true, user: await b.getUser(), link: null, conflict: null, error: null });
+    await useAccount.getState().refresh();
+    return b;
+  };
+
+  it('保存枠がいっぱいで失敗しても、編集中のデータは変わらずエラーを表示する', async () => {
+    await setup();
+    const acc = useAccount.getState();
+    for (const n of ['A', 'B', 'C']) await acc.saveNew(n, tpl());
+    const p = tpl();
+    const before = JSON.stringify(p);
+    expect(await useAccount.getState().saveNew('D', p)).toBeNull();
+    expect(JSON.stringify(p)).toBe(before);
+    expect(useAccount.getState().error).toContain('保存枠がいっぱい');
+    expect(useAccount.getState().status?.used).toBe(3);
+  });
+
+  it('結びついた間取りへの上書きは、ほかで更新されていたら確認待ち（conflict）になる', async () => {
+    const b = await setup();
+    const acc = useAccount.getState();
+    const p = tpl();
+    const item = (await acc.saveNew('家', p))!;
+    expect(useAccount.getState().link).toMatchObject({ cloudId: item.id, updatedAt: item.updatedAt });
+    await new Promise((r) => setTimeout(r, 5));
+    await b.overwrite(item.id, '家', { ...p, projectName: '別の端末' }); // ほかの端末での更新
+    expect(await useAccount.getState().overwrite(item.id, '家', p)).toBeNull();
+    expect(useAccount.getState().conflict).toEqual({ id: item.id, name: '家' });
+    expect(useAccount.getState().error).toBeNull();
+    expect(await useAccount.getState().overwrite(item.id, '家', p, true)).not.toBeNull();
+    expect(useAccount.getState().conflict).toBeNull();
   });
 });

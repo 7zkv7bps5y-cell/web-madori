@@ -5,9 +5,9 @@
  */
 export function initAds(root: ParentNode = document) {
   const client = import.meta.env.VITE_ADSENSE_CLIENT as string | undefined;
-  const slots = Array.from(root.querySelectorAll<HTMLElement>('.ad-slot'));
-  if (!client || slots.length === 0) return;
-  document.body.classList.add('ads-on');
+  const unit = import.meta.env.VITE_ADSENSE_SLOT as string | undefined;
+  if (!client) return;
+  // 広告のスクリプト（自動広告を使う場合もこれだけで動く）
   if (!document.querySelector('script[data-adsense]')) {
     const s = document.createElement('script');
     s.async = true;
@@ -16,9 +16,12 @@ export function initAds(root: ParentNode = document) {
     s.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(client)}`;
     document.head.appendChild(s);
   }
-  const unit = import.meta.env.VITE_ADSENSE_SLOT as string | undefined;
+  // 広告ユニット ID がなければ枠は出さない（空の枠を表示しない）
+  const slots = Array.from(root.querySelectorAll<HTMLElement>('.ad-slot'));
+  if (!unit || slots.length === 0) return;
+  document.body.classList.add('ads-on');
   for (const slot of slots) {
-    if (slot.dataset.filled || !unit) continue;
+    if (slot.dataset.filled) continue;
     slot.dataset.filled = '1';
     slot.innerHTML = `<span class="ad-label">広告</span><ins class="adsbygoogle" style="display:block" data-ad-client="${client}" data-ad-slot="${unit}" data-ad-format="auto" data-full-width-responsive="true"></ins>`;
     try {

@@ -9,7 +9,7 @@ import { canCreateCloudSave, planConfig, type PlanId } from '../billing/plans';
 import { parseProject } from '../model/project';
 import type { Project } from '../model/types';
 import { toCloudJson } from './supabaseBackend';
-import { CloudError, QUOTA_MESSAGE, type CloudBackend, type CloudItem, type CloudUser } from './types';
+import { CloudError, CONFLICT_MESSAGE, QUOTA_MESSAGE, type CloudBackend, type CloudItem, type CloudUser } from './types';
 
 interface Row extends CloudItem {
   userId: string;
@@ -37,8 +37,14 @@ export class MockBackend implements CloudBackend {
   private listeners = new Set<(u: CloudUser | null) => void>();
 
   constructor(private opts: MockOptions = {}) {
-    const raw = opts.storage?.getItem(KEY);
-    this.db = raw ? (JSON.parse(raw) as Db) : { rows: [], plans: {}, session: null };
+    this.db = { rows: [], plans: {}, session: null };
+    this.reload();
+  }
+
+  /** 保存先から読み直す（同じ保存先を共有する別の画面・端末の変更を反映） */
+  private reload() {
+    const raw = this.opts.storage?.getItem(KEY);
+    if (raw) this.db = JSON.parse(raw) as Db;
   }
 
   private now() {
@@ -75,25 +81,36 @@ export class MockBackend implements CloudBackend {
 
   /** テスト専用: プランの切り替え（本番の利用者にはこの手段はない） */
   setPlanForTesting(userId: string, plan: PlanId) {
+    this.reload();
     this.db.plans[userId] = plan;
     this.save();
   }
 
   /** テスト専用: 作成日時を過去にずらす（「月が変わっても回復しない」の確認用） */
   ageAllForTesting(days: number) {
+    this.reload();
     for (const r of this.db.rows) r.createdAt = new Date(Date.parse(r.createdAt) - days * 86400_000).toISOString();
     this.save();
   }
 
   async getUser() {
+    this.reload();
     return this.db.session;
   }
   async signInWithEmail(email: string) {
+    this.reload();
     this.db.session = { id: `mock-user:${email.trim().toLowerCase()}`, email: email.trim() };
     this.save();
     for (const l of this.listeners) l(this.db.session);
   }
+  /** 模擬: 6 桁の数字ならログインできる（本物のコード確認は Supabase が行う） */
+  async verifyEmailCode(email: string, code: string) {
+    if (!/^\d{6}$/.test(code.trim())) throw new CloudError('not_signed_in', 'コードが正しくないか、有効期限が切れています。もう一度メールを送ってください。');
+    await this.signInWithEmail(email);
+  }
+
   async signOut() {
+    this.reload();
     this.db.session = null;
     this.save();
     for (const l of this.listeners) l(null);
@@ -103,36 +120,47 @@ export class MockBackend implements CloudBackend {
     return () => this.listeners.delete(cb);
   }
   async status() {
+    this.reload();
     const plan = planConfig(this.db.plans[this.me().id] ?? 'free');
     return { planId: plan.id, cloudLimit: plan.cloudLimit, used: this.mine().length, showAds: plan.showAds };
   }
   async list() {
+    this.reload();
     return this.mine()
       .slice()
       .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
       .map(pick);
   }
-  async load(id: string): Promise<Project> {
-    const r = parseProject(JSON.stringify(this.find(id).data));
+  async load(id: string): Promise<{ project: Project; item: CloudItem }> {
+    this.reload();
+    const row = this.find(id);
+    const r = parseProject(JSON.stringify(row.data));
     if (!r.ok) throw new CloudError('invalid_data', r.error);
-    return r.project;
+    return { project: r.project, item: pick(row) };
   }
   async create(name: string, project: Project) {
+    this.reload();
     return this.insert(name, toCloudJson(project));
   }
-  async overwrite(id: string, name: string, project: Project) {
+  async overwrite(id: string, name: string, project: Project, expectedUpdatedAt?: string) {
+    this.reload();
     const row = this.find(id);
+    if (expectedUpdatedAt && row.updatedAt !== expectedUpdatedAt) throw new CloudError('conflict', CONFLICT_MESSAGE);
     row.name = name;
     row.data = toCloudJson(project);
-    row.updatedAt = this.now();
+    // 同じ時刻の連続更新でも区別できるよう、必ず進める
+    const t = this.now();
+    row.updatedAt = t > row.updatedAt ? t : new Date(Date.parse(row.updatedAt) + 1).toISOString();
     this.save();
     return pick(row);
   }
   async duplicate(id: string) {
+    this.reload();
     const src = this.find(id);
     return this.insert(`${src.name}のコピー`.slice(0, 200), JSON.parse(JSON.stringify(src.data)));
   }
   async remove(id: string) {
+    this.reload();
     const row = this.find(id);
     this.db.rows = this.db.rows.filter((r) => r !== row);
     this.save();
