@@ -380,3 +380,93 @@ button.link { border: 0; background: none; padding: 0; min-height: 0; text-align
 /* エディタの広告枠: パーツのボタンと誤認しないよう区切る */
 .ads-on .sidebar .ad-slot { margin: 24px 12px 16px; padding-top: 10px; border-top: 1px solid var(--border); }
 .ad-slot .ad-label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+/* ==== 表示倍率 ==== */
+.zoom-controls.zoom-group { right: 104px; }
+.zoom-controls.aux-group { right: 12px; }
+.zoom-controls .zoom-reset { font-size: 12px; font-weight: 700; min-width: 44px; }
+.zoom-controls .zoom-pct { min-width: 46px; }
+.zoom-controls button:disabled { opacity: 0.35; }
+/* スマホ: 倍率ボタンは左下に横並び、寸法・ヘルプは右下 */
+.is-mobile .zoom-controls.zoom-group { flex-direction: row; left: 8px; right: auto; bottom: 8px; }
+.is-mobile .zoom-controls.zoom-group button { display: block; min-width: 40px; min-height: 40px; }
+.is-mobile .zoom-controls.zoom-group .zoom-pct { display: inline-block; min-width: 40px; font-size: 11px; text-align: center; }
+.is-mobile .zoom-controls.zoom-group .zoom-reset { min-width: 44px; font-size: 11px; }
+.is-mobile .zoom-controls.zoom-group .zoom-fit { display: none; }
+.is-mobile .zoom-controls.aux-group { right: 8px; bottom: 8px; }
+/* ==== カスタムパーツ ==== */
+.canvas .hit-custom { cursor: move; }
+.library-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.library-list li { display: flex; gap: 4px; }
+.library-list li .palette-item { flex: 1; min-width: 0; }
+.library-remove { min-width: 34px; padding: 0; color: var(--muted); }
+
+/* ==== 共有リンク（閲覧専用）==== */
+.viewer-banner {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 12px;
+  background: #fff8e6; border-bottom: 1px solid #ecd9a8; font-size: 13px;
+}
+.viewer-title { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 200px; }
+.viewer-tag { flex: none; background: #8a6a12; color: #fff; border-radius: 999px; padding: 1px 8px; font-size: 12px; font-weight: 700; }
+.viewer-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.viewer-actions button { min-height: 34px; }
+.is-mobile .viewer-banner { padding: 6px 8px; gap: 6px; }
+.is-mobile .viewer-actions { width: 100%; }
+.is-mobile .viewer-actions button { flex: 1 1 auto; min-height: var(--tap); font-size: 13px; padding: 0 8px; }
+.viewer-side h2 { margin-top: 0; }
+.viewer-panel .pi-empty { color: var(--muted); }
+.share-section { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin: 0 0 12px; }
+.share-section h3 { margin: 0 0 6px; font-size: 15px; }
+.share-section > summary { cursor: pointer; font-weight: 600; font-size: 14px; min-height: 32px; display: flex; align-items: center; }
+.share-section[open] > summary { margin-bottom: 6px; }
+.share-panel { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.share-panel p { margin: 0; }
+.share-link { width: 100%; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+.share-on { display: inline-block; background: var(--accent-weak); color: var(--accent); border-radius: 999px; padding: 0 8px; font-size: 12px; font-weight: 700; margin-right: 4px; white-space: nowrap; }
+.cloud-item-head .share-on { margin-left: 6px; }
+.cloud-item-actions button.active { background: var(--accent-weak); border-color: var(--accent); }
+
+/* ==== 描画中の案内 ==== */
+.draw-banner { flex-wrap: wrap; border-radius: 14px; }
+.draw-banner > span { flex: 1 1 200px; }
+
+/* ==== パーツ別の参考情報 ==== */
+.part-info > summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pi-count { font-weight: 400; font-size: 12px; color: var(--accent); background: var(--accent-weak); border-radius: 999px; padding: 0 8px; }
+.part-info .segmented { margin: 6px 0 8px; }
+.part-info-view, .part-info-editor { display: flex; flex-direction: column; gap: 8px; }
+.part-info-view h3, .part-info-view h4 { margin: 0; }
+.pi-product { margin: 0; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.pi-price { font-weight: 700; color: var(--accent); }
+.pi-text { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.6; }
+.pi-memo { background: #faf8f4; border-radius: 6px; padding: 6px 8px; }
+.pi-images { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+.pi-images li { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pi-images img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); background: #faf8f4; display: block; }
+.pi-images button.thumb { padding: 0; border: 0; background: none; min-height: 0; cursor: zoom-in; }
+.pi-images.edit { grid-template-columns: 1fr; }
+.pi-images.edit li { flex-direction: row; align-items: center; gap: 6px; }
+.pi-images.edit img { width: 56px; height: 56px; flex: none; }
+.pi-images.edit input { flex: 1; min-width: 0; }
+.pi-images.edit button { flex: none; min-width: 34px; padding: 0; }
+.pi-links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pi-links li { display: flex; flex-direction: column; min-width: 0; }
+.pi-links a { word-break: break-all; color: var(--accent); }
+.pi-links.edit li { flex-direction: row; align-items: center; gap: 6px; }
+.pi-links.edit .ellipsis { flex: 1; min-width: 0; }
+.pi-edit-block { display: flex; flex-direction: column; gap: 6px; }
+.pi-add { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.pi-add input { flex: 1 1 140px; min-width: 0; }
+.pi-add.column { flex-direction: column; align-items: stretch; }
+.lightbox {
+  position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.85); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; padding: 16px; gap: 10px;
+}
+.lightbox img { max-width: 100%; max-height: calc(100% - 110px); object-fit: contain; border-radius: 4px; background: #fff; }
+.lightbox-caption { color: #fff; margin: 0; text-align: center; }
+.lightbox-bar { display: flex; gap: 8px; align-items: center; color: #fff; }
+.lightbox-bar button { min-width: var(--tap); min-height: var(--tap); }
+.lbl-short { display: none; }
+.is-mobile .viewer-banner .lbl-long { display: none; }
+.is-mobile .viewer-banner .lbl-short { display: inline; }
+.is-mobile .viewer-actions { flex-wrap: nowrap; }
+.is-mobile .viewer-actions .viewer-close { flex: 0 0 auto; }

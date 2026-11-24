@@ -23,7 +23,8 @@ import {
   snapFurnitureMove,
   type FurnitureHandle,
 } from '../model/furnitureGeom';
-import type { Furniture, Project, Rect, RoomType, Side } from '../model/types';
+import { createCustomPart, defaultDesign, shapeFromPoints, simplify } from '../model/customParts';
+import type { CustomPartDesign, Furniture, Project, Rect, RoomType, Side } from '../model/types';
 import { formatMm } from '../model/units';
 import { activeRooms, useStore } from '../store/store';
 import { clampZoom, useView } from '../store/view';
@@ -44,9 +45,12 @@ type Gesture =
       moved: boolean;
       began: boolean;
     }
-  | { kind: 'furniture'; id: string; sx: number; sy: number; orig: Furniture; moved: boolean; began: boolean }
-  | { kind: 'fresize'; id: string; handle: FurnitureHandle; orig: Furniture; began: boolean }
-  | { kind: 'frotate'; id: string; began: boolean }
+  /** 家具・カスタムパーツ（target）の移動・サイズ変更・回転。カスタムパーツは d を高さ(h)として扱う */
+  | { kind: 'furniture'; target: BoxTarget; id: string; sx: number; sy: number; orig: Furniture; moved: boolean; began: boolean }
+  | { kind: 'fresize'; target: BoxTarget; id: string; handle: FurnitureHandle; orig: Furniture; began: boolean }
+  | { kind: 'frotate'; target: BoxTarget; id: string; began: boolean }
+  /** カスタムパーツの多角形（タップで頂点を追加）・自由描画（なぞる） */
+  | { kind: 'draw'; shape: 'polygon' | 'freehand'; sx: number; sy: number; moved: boolean; panX: number; panY: number; stroke: { x: number; y: number }[] }
   | { kind: 'resize'; id: string; handle: ResizeHandle; orig: Rect; began: boolean }
   | { kind: 'opening'; id: string; sx: number; sy: number; moved: boolean; began: boolean }
   | { kind: 'button'; baseId: string; dir: Side; sx: number; sy: number; moved: boolean }
@@ -54,6 +58,34 @@ type Gesture =
   | { kind: 'pinch'; dist: number; zoom: number; mx: number; my: number; panX: number; panY: number };
 
 const ACCENT = '#1f7a63';
+
+type BoxTarget = 'furniture' | 'custom';
+
+/** 家具・カスタムパーツを、同じ「回転した箱」として扱うための変換 */
+function boxOf(p: Project, target: BoxTarget, id: string): Furniture | undefined {
+  if (target === 'furniture') return p.furniture.find((f) => f.id === id);
+  const c = p.customParts.find((x) => x.id === id);
+  return c ? ({ ...c, d: c.h, type: 'custom', height: 0, productId: null } as unknown as Furniture) : undefined;
+}
+
+function applyBox(p: Project, target: BoxTarget, id: string, patch: Partial<Pick<Furniture, 'x' | 'y' | 'w' | 'd' | 'rotation'>>): Project {
+  if (target === 'furniture') return { ...p, furniture: p.furniture.map((f) => (f.id === id ? { ...f, ...patch } : f)) };
+  return {
+    ...p,
+    customParts: p.customParts.map((c) => {
+      if (c.id !== id) return c;
+      const next = { ...c };
+      if (patch.x !== undefined) next.x = patch.x;
+      if (patch.y !== undefined) next.y = patch.y;
+      if (patch.w !== undefined) next.w = patch.w;
+      if (patch.d !== undefined) next.h = patch.d;
+      if (patch.rotation !== undefined) next.rotation = patch.rotation;
+      // 円は縦横を同じに保つ
+      if (c.shape === 'circle' && (patch.w !== undefined || patch.d !== undefined)) next.w = next.h = Math.max(next.w, next.h);
+      return next;
+    }),
+  };
+}
 export const ROOM_DRAG_MIME = 'application/x-madori-room';
 export const FURNITURE_DRAG_MIME = 'application/x-madori-furniture';
 
@@ -90,6 +122,34 @@ function withRoomRect(p: Project, id: string, rect: Rect): Project {
     rooms: p.rooms.map((r) => (r.id === id ? { ...r, ...rect } : r)),
     openings: p.openings.map((o) => (o.roomId === id ? clampOpeningToRoom(o, rect) : o)),
   };
+}
+
+/**
+ * 描きかけの図形（多角形の頂点・自由描画の線）からカスタムパーツを作る。
+ * 点が少ない・小さすぎる場合は作らずに案内する。
+ */
+export function finishDraftShape(shape: 'polygon' | 'freehand', simplifyTolerance = 0) {
+  const v = useView.getState();
+  const st = useStore.getState();
+  const pts = shape === 'freehand' && simplifyTolerance > 0 ? simplify(v.draft, simplifyTolerance) : v.draft;
+  v.set({ draft: [] });
+  const s = shapeFromPoints(pts);
+  if (!s) {
+    st.notify(shape === 'polygon' ? '頂点を 3 つ以上置いてください（小さすぎる図形は作れません）。' : 'もう少し大きく描いてください。', 'error');
+    return;
+  }
+  st.setTool({ kind: 'select' });
+  st.addCustomPart(createCustomPart({ ...defaultDesign(shape), points: s.points }, s, st.project.settings.activeFloorId));
+}
+
+/** 画面中央にカスタムパーツを置く（四角形・円・楕円・ライブラリのパーツ） */
+export function addCustomPartNearCenter(design: CustomPartDesign, size: { w: number; h: number }, libraryId: string | null = null) {
+  const { zoom, panX, panY, width, height } = useView.getState();
+  const st = useStore.getState();
+  const grid = st.project.settings.furnitureGrid;
+  const x = Math.round((width / 2 - panX) / zoom / grid) * grid;
+  const y = Math.round((height / 2 - panY) / zoom / grid) * grid;
+  st.addCustomPart(createCustomPart(design, { x, y, ...size }, st.project.settings.activeFloorId, libraryId));
 }
 
 /** 画面中央付近の空き位置に部屋を置く（パレットからの追加用） */
@@ -182,6 +242,31 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
     }
   }, [width, height, fit]);
 
+  // 拡大・縮小・移動で、間取りが画面の外に完全に出てしまわないようにする（端が 48px は見える位置まで戻す）
+  useEffect(() => {
+    if (gesture.current?.kind === 'pinch') return;
+    const p = useStore.getState().project;
+    const fid = p.settings.activeFloorId;
+    const b = boundsOf([
+      ...p.rooms.filter((r) => r.floorId === fid),
+      ...p.customParts.filter((c) => c.floorId === fid).map((c) => ({ x: c.x - Math.max(c.w, c.h) / 2, y: c.y - Math.max(c.w, c.h) / 2, w: Math.max(c.w, c.h), h: Math.max(c.w, c.h) })),
+      ...p.furniture.filter((f) => f.floorId === fid).map((f) => ({ x: f.x - Math.max(f.w, f.d) / 2, y: f.y - Math.max(f.w, f.d) / 2, w: Math.max(f.w, f.d), h: Math.max(f.w, f.d) })),
+    ]);
+    if (!b || width <= 0 || height <= 0) return;
+    const keep = Math.min(48, width / 4, height / 4);
+    const left = b.x * zoom + panX;
+    const right = (b.x + b.w) * zoom + panX;
+    const top = b.y * zoom + panY;
+    const bottom = (b.y + b.h) * zoom + panY;
+    let dx = 0;
+    let dy = 0;
+    if (right < keep) dx = keep - right;
+    else if (left > width - keep) dx = width - keep - left;
+    if (bottom < keep) dy = keep - bottom;
+    else if (top > height - keep) dy = height - keep - top;
+    if (dx || dy) setView({ panX: panX + dx, panY: panY + dy });
+  }, [zoom, panX, panY, width, height, setView]);
+
   // ホイールズーム（passive: false が必要なためネイティブで登録）
   useEffect(() => {
     const el = svgRef.current;
@@ -269,27 +354,48 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
       gesture.current = { kind: 'place', sx, sy, moved: false, panX: v.panX, panY: v.panY };
       return;
     }
-    if (st.mode === 'furniture') {
-      const sel = st.selection?.kind === 'furniture' ? st.project.furniture.find((f) => f.id === st.selection!.id) : undefined;
-      if (sel && target.closest('[data-frotate]')) {
-        gesture.current = { kind: 'frotate', id: sel.id, began: false };
+    if (st.tool.kind === 'drawShape') {
+      const w = toWorld(sx, sy);
+      gesture.current = { kind: 'draw', shape: st.tool.shape, sx, sy, moved: false, panX: v.panX, panY: v.panY, stroke: [w] };
+      return;
+    }
+    // 選択中の家具・カスタムパーツのハンドル（閲覧専用モードでは使わない）
+    const selKind = st.selection?.kind;
+    if (!st.viewer && (selKind === 'custom' || (selKind === 'furniture' && st.mode === 'furniture'))) {
+      const bt = selKind as BoxTarget;
+      const box = boxOf(st.project, bt, st.selection!.id);
+      if (box && target.closest('[data-frotate]')) {
+        gesture.current = { kind: 'frotate', target: bt, id: box.id, began: false };
         return;
       }
       const fh = target.closest('[data-fhandle]');
-      if (sel && fh) {
-        gesture.current = { kind: 'fresize', id: sel.id, handle: fh.getAttribute('data-fhandle') as FurnitureHandle, orig: sel, began: false };
+      if (box && fh) {
+        gesture.current = { kind: 'fresize', target: bt, id: box.id, handle: fh.getAttribute('data-fhandle') as FurnitureHandle, orig: box, began: false };
         return;
       }
+    }
+    const hitCustom = () => {
+      const ce = target.closest('[data-custom-id]');
+      if (!ce) return false;
+      const id = ce.getAttribute('data-custom-id')!;
+      const box = boxOf(st.project, 'custom', id);
+      if (!box) return false;
+      st.select({ kind: 'custom', id });
+      gesture.current = { kind: 'furniture', target: 'custom', id, sx, sy, orig: box, moved: false, began: false };
+      return true;
+    };
+    if (st.mode === 'furniture') {
       const fe = target.closest('[data-furniture-id]');
       if (fe) {
         const id = fe.getAttribute('data-furniture-id')!;
         const f = st.project.furniture.find((x) => x.id === id);
         if (f) {
           st.select({ kind: 'furniture', id });
-          gesture.current = { kind: 'furniture', id, sx, sy, orig: f, moved: false, began: false };
+          gesture.current = { kind: 'furniture', target: 'furniture', id, sx, sy, orig: f, moved: false, began: false };
           return;
         }
       }
+      if (hitCustom()) return;
       gesture.current = { kind: 'pan', sx, sy, panX: v.panX, panY: v.panY, moved: false };
       return;
     }
@@ -326,6 +432,7 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
       gesture.current = { kind: 'opening', id, sx, sy, moved: false, began: false };
       return;
     }
+    if (hitCustom()) return;
     const roomEl = target.closest('[data-room-id]');
     if (roomEl) {
       const id = roomEl.getAttribute('data-room-id')!;
@@ -454,7 +561,24 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
           st.project.settings.furnitureGrid,
           10 / v.zoom,
         );
-        st.dragUpdate((p) => ({ ...p, furniture: p.furniture.map((f) => (f.id === g.id ? { ...f, ...pos } : f)) }));
+        st.dragUpdate((p) => applyBox(p, g.target, g.id, pos));
+        return;
+      }
+      case 'draw': {
+        if (g.shape === 'freehand') {
+          // なぞった点を記録（画面上 3px 以上動いたら追加）
+          const w = toWorld(e.clientX, e.clientY);
+          const last = g.stroke[g.stroke.length - 1];
+          if (Math.hypot(w.x - last.x, w.y - last.y) * v.zoom >= 3) {
+            g.stroke.push(w);
+            g.moved = true;
+            useView.getState().set({ draft: g.stroke.slice() });
+          }
+          return;
+        }
+        // 多角形: ドラッグは画面の移動、タップで頂点を追加
+        if (far) g.moved = true;
+        if (g.moved) setView({ panX: g.panX + dx, panY: g.panY + dy });
         return;
       }
       case 'fresize': {
@@ -463,7 +587,7 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
           g.began = true;
         }
         const r = resizeFurniture(g.orig, g.handle, toWorld(e.clientX, e.clientY), 10);
-        st.dragUpdate((p) => ({ ...p, furniture: p.furniture.map((f) => (f.id === g.id ? { ...f, ...r } : f)) }));
+        st.dragUpdate((p) => applyBox(p, g.target, g.id, r));
         return;
       }
       case 'frotate': {
@@ -471,10 +595,10 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
           st.beginDrag();
           g.began = true;
         }
-        const f = st.project.furniture.find((x) => x.id === g.id);
+        const f = boxOf(st.project, g.target, g.id);
         if (!f) return;
         const rotation = angleFromPointer(f, toWorld(e.clientX, e.clientY), e.shiftKey ? 1 : 15);
-        st.dragUpdate((p) => ({ ...p, furniture: p.furniture.map((x) => (x.id === g.id ? { ...x, rotation } : x)) }));
+        st.dragUpdate((p) => applyBox(p, g.target, g.id, { rotation }));
         return;
       }
       case 'resize': {
@@ -532,6 +656,25 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
     if (cancelled) return;
     if (g.kind === 'button' && !g.moved) st.openAddDialog({ baseId: g.baseId, dir: g.dir });
     if (g.kind === 'pan' && !g.moved) st.select(null);
+    if (g.kind === 'draw') {
+      if (g.shape === 'freehand') {
+        finishDraftShape('freehand', 2 / useView.getState().zoom);
+        return;
+      }
+      if (g.moved) return;
+      // 多角形: タップした位置を頂点に追加。最初の点の近くをタップすると完成
+      const v = useView.getState();
+      const w = toWorld(e.clientX, e.clientY);
+      const grid = st.project.settings.furnitureGrid;
+      const pt = { x: Math.round(w.x / grid) * grid, y: Math.round(w.y / grid) * grid };
+      const draft = v.draft;
+      if (draft.length >= 3 && Math.hypot(pt.x - draft[0].x, pt.y - draft[0].y) * v.zoom <= 16) {
+        finishDraftShape('polygon');
+        return;
+      }
+      v.set({ draft: [...draft, pt] });
+      return;
+    }
     if (g.kind === 'place' && !g.moved && st.tool.kind === 'placeOpening') {
       const def = openingDef(st.tool.type);
       const v = useView.getState();
@@ -580,8 +723,28 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
   const selRoom = planMode && selection?.kind === 'room' ? rooms.find((r) => r.id === selection.id) : undefined;
   const selFurniture =
     !planMode && selection?.kind === 'furniture' ? project.furniture.find((f) => f.id === selection.id) : undefined;
-  const plusRoom = planMode && tool.kind === 'select' ? selRoom ?? rooms.find((r) => r.id === hoverRoomId) : undefined;
   const furniture = project.furniture.filter((f) => f.floorId === floorId);
+  // 回転・サイズ変更のハンドルを付ける箱（家具配置モードの家具、またはカスタムパーツ）
+  const selBox = selFurniture ?? (selection?.kind === 'custom' ? boxOf(project, 'custom', selection.id) : undefined);
+  const customParts = project.customParts.filter((c) => c.floorId === floorId);
+  const viewer = useStore((s) => s.viewer);
+  const draft = useView((s) => s.draft);
+  // 参考情報（画像・URL・メモ）があるパーツの印（編集画面だけ。画像・PDF には描かない）
+  const infoMarks: { key: string; x: number; y: number }[] = [];
+  const hasInfo = (i?: { links: unknown[]; images: unknown[]; title?: string; productName?: string; description?: string; memo?: string; specs?: string; price?: number }) =>
+    !!i && (i.links.length > 0 || i.images.length > 0 || !!(i.title || i.productName || i.description || i.memo || i.specs || i.price !== undefined));
+  for (const r of rooms) if (hasInfo(r.info)) infoMarks.push({ key: r.id, x: r.x + px(14) + 60, y: r.y + px(14) + 60 });
+  for (const f of furniture) if (hasInfo(f.info)) infoMarks.push({ key: f.id, x: f.x, y: f.y - f.d / 2 + px(10) });
+  for (const c of customParts) if (hasInfo(c.info)) infoMarks.push({ key: c.id, x: c.x, y: c.y - c.h / 2 + px(10) });
+  for (const o of project.openings) {
+    if (o.floorId !== floorId || !hasInfo(o.info)) continue;
+    const room = rooms.find((r) => r.id === o.roomId);
+    if (!room) continue;
+    const g = openingGeom(o, room);
+    const mid = (g.start + g.end) / 2;
+    infoMarks.push({ key: o.id, x: g.orientation === 'h' ? mid : g.pos, y: g.orientation === 'h' ? g.pos : mid });
+  }
+  const plusRoom = !viewer && planMode && tool.kind === 'select' ? selRoom ?? rooms.find((r) => r.id === hoverRoomId) : undefined;
   const selOpening = selection?.kind === 'opening' ? project.openings.find((o) => o.id === selection.id) : undefined;
   const selOpeningRoom = selOpening ? rooms.find((r) => r.id === selOpening.roomId) : undefined;
 
@@ -696,6 +859,19 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
             })}
         </g>
 
+        {/* カスタムパーツの当たり判定（部屋より上。家具配置モードでは家具より下） */}
+        <g className={tool.kind !== 'select' ? 'no-hit' : ''}>
+          {customParts.map((c) => (
+            <polygon
+              key={c.id}
+              data-custom-id={c.id}
+              points={furnitureCorners({ x: c.x, y: c.y, w: c.w, d: c.h, rotation: c.rotation }).map((q) => `${q.x},${q.y}`).join(' ')}
+              fill="transparent"
+              className="hit-custom"
+            />
+          ))}
+        </g>
+
         {/* 選択中の開口部 */}
         {selOpening && selOpeningRoom && (
           <polygon
@@ -743,6 +919,7 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
               </text>
             </g>
             {tool.kind === 'select' &&
+              !viewer &&
               HANDLES.map((h) => {
                 const p = handlePos(selRoom, h);
                 return (
@@ -883,8 +1060,8 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
               ))}
           </g>
         )}
-        {selFurniture && (() => {
-          const f = selFurniture;
+        {selBox && (() => {
+          const f = selBox;
           const top = handleWorld(f, 'n');
           const rad = (f.rotation * Math.PI) / 180;
           const off = px(touchUi ? 40 : 30);
@@ -899,16 +1076,16 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
                 vectorEffect="non-scaling-stroke"
                 pointerEvents="none"
               />
-              <line x1={top.x} y1={top.y} x2={rot.x} y2={rot.y} stroke={ACCENT} strokeWidth={1.5} vectorEffect="non-scaling-stroke" pointerEvents="none" />
-              <g data-frotate="1" style={{ cursor: 'grab' }} role="button" aria-label="回転">
+              {!viewer && <line x1={top.x} y1={top.y} x2={rot.x} y2={rot.y} stroke={ACCENT} strokeWidth={1.5} vectorEffect="non-scaling-stroke" pointerEvents="none" />}
+              {!viewer && <g data-frotate="1" style={{ cursor: 'grab' }} role="button" aria-label="回転">
                 <circle cx={rot.x} cy={rot.y} r={btnR * 1.4} fill="transparent" />
                 <circle cx={rot.x} cy={rot.y} r={btnR * 0.75} fill="#fff" stroke={ACCENT} strokeWidth={2} vectorEffect="non-scaling-stroke" />
                 <text x={rot.x} y={rot.y + btnR * 0.35} fontSize={btnR} textAnchor="middle" fill={ACCENT} pointerEvents="none">
                   ↻
                 </text>
-              </g>
+              </g>}
               {/* 画面上で小さい家具はハンドルが本体を隠すため省略（拡大するか詳細パネルで変更） */}
-              {Math.min(f.w, f.d) * zoom >= (touchUi ? 70 : 36) && FURNITURE_HANDLES.map((h) => {
+              {!viewer && Math.min(f.w, f.d) * zoom >= (touchUi ? 70 : 36) && FURNITURE_HANDLES.map((h) => {
                 const p = handleWorld(f, h);
                 const hs = handleSize * 0.85;
                 return (
@@ -931,6 +1108,35 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
             </g>
           );
         })()}
+
+        {/* 描きかけのカスタムパーツ */}
+        {draft.length > 0 && (
+          <g pointerEvents="none">
+            <polyline
+              points={draft.map((q) => `${q.x},${q.y}`).join(' ')}
+              fill={tool.kind === 'drawShape' && tool.shape === 'polygon' && draft.length >= 3 ? 'rgba(31,122,99,0.12)' : 'none'}
+              stroke={ACCENT}
+              strokeWidth={2}
+              strokeDasharray={tool.kind === 'drawShape' && tool.shape === 'polygon' ? '6 4' : undefined}
+              vectorEffect="non-scaling-stroke"
+            />
+            {tool.kind === 'drawShape' &&
+              tool.shape === 'polygon' &&
+              draft.map((q, i) => (
+                <circle key={i} cx={q.x} cy={q.y} r={px(i === 0 ? 8 : 5)} fill={i === 0 ? '#fff' : ACCENT} stroke={ACCENT} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+              ))}
+          </g>
+        )}
+
+        {/* 参考情報があるパーツの印 */}
+        {infoMarks.map((m) => (
+          <g key={m.key} pointerEvents="none" className="info-mark">
+            <circle cx={m.x} cy={m.y} r={px(8)} fill="#2f6fb0" stroke="#fff" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+            <text x={m.x} y={m.y + px(4)} fontSize={px(11)} textAnchor="middle" fill="#fff" fontWeight={700} fontFamily="Georgia,serif">
+              i
+            </text>
+          </g>
+        ))}
 
         {/* 開口部配置のプレビュー */}
         {ghost && tool.kind === 'placeOpening' && (() => {

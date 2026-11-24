@@ -2,6 +2,7 @@ import { OPENING_TYPE_DEFS, ROOM_TYPE_DEFS, type RoomTypeDef } from '../model/ca
 import type { OpeningType } from '../model/types';
 import { useStore } from '../store/store';
 import { FURNITURE_CATEGORIES, FURNITURE_DEFS } from '../model/furnitureCatalog';
+import { CustomPartPalette } from './CustomPartPalette';
 import { addFurnitureNearCenter, addRoomNearCenter, FURNITURE_DRAG_MIME, ROOM_DRAG_MIME } from './Canvas';
 
 function FurniturePalette({ onPicked }: { onPicked?: () => void }) {
@@ -44,6 +45,7 @@ function FurniturePalette({ onPicked }: { onPicked?: () => void }) {
           </div>
         </section>
       ))}
+      <CustomPartPalette onPicked={onPicked} />
     </div>
   );
 }
@@ -162,6 +164,7 @@ function PlanPalette({ onPicked }: { onPicked?: () => void }) {
           })}
         </div>
       </section>
+      <CustomPartPalette onPicked={onPicked} />
     </div>
   );
 }

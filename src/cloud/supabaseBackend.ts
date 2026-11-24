@@ -2,7 +2,19 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { planConfig } from '../billing/plans';
 import { parseProject, serializeProject } from '../model/project';
 import type { Project } from '../model/types';
-import { CloudError, CONFLICT_MESSAGE, QUOTA_MESSAGE, type CloudBackend, type CloudItem, type CloudStatus, type CloudUser } from './types';
+import {
+  CloudError,
+  CONFLICT_MESSAGE,
+  QUOTA_MESSAGE,
+  SHARE_NOT_FOUND,
+  SHARE_TOKEN_RE,
+  type CloudBackend,
+  type CloudItem,
+  type CloudStatus,
+  type CloudUser,
+  type SharedFloorplan,
+  type ShareInfo,
+} from './types';
 
 const COLUMNS = 'id, name, created_at, updated_at';
 
@@ -142,5 +154,39 @@ export class SupabaseBackend implements CloudBackend {
   async remove(id: string) {
     const { error } = await this.client.from('floorplans').delete().eq('id', id);
     if (error) throw mapSupabaseError(error);
+  }
+
+  async listShares(): Promise<ShareInfo[]> {
+    const { data, error } = await this.client.from('floorplan_shares').select('floorplan_id, token, created_at');
+    if (error) throw mapSupabaseError(error);
+    return (data as { floorplan_id: string; token: string; created_at: string }[]).map((r) => ({
+      floorplanId: r.floorplan_id,
+      token: r.token,
+      createdAt: r.created_at,
+    }));
+  }
+
+  async issueShare(floorplanId: string): Promise<ShareInfo> {
+    const { data, error } = await this.client.rpc('issue_floorplan_share', { p_floorplan_id: floorplanId });
+    if (error) throw mapSupabaseError(error);
+    const r = (Array.isArray(data) ? data[0] : data) as { floorplan_id: string; token: string; created_at: string } | undefined;
+    if (!r) throw new CloudError('unknown', '共有リンクを発行できませんでした。');
+    return { floorplanId: r.floorplan_id, token: r.token, createdAt: r.created_at };
+  }
+
+  async revokeShare(floorplanId: string) {
+    const { error } = await this.client.from('floorplan_shares').delete().eq('floorplan_id', floorplanId);
+    if (error) throw mapSupabaseError(error);
+  }
+
+  async getShared(token: string): Promise<SharedFloorplan> {
+    if (!SHARE_TOKEN_RE.test(token)) throw new CloudError('not_found', SHARE_NOT_FOUND);
+    const { data, error } = await this.client.rpc('get_shared_floorplan', { p_token: token });
+    if (error) throw mapSupabaseError(error);
+    const r = (Array.isArray(data) ? data[0] : data) as { name: string; data: unknown; updated_at: string } | undefined;
+    if (!r) throw new CloudError('not_found', SHARE_NOT_FOUND);
+    const parsed = parseProject(JSON.stringify(r.data));
+    if (!parsed.ok) throw new CloudError('invalid_data', parsed.error);
+    return { name: r.name, project: parsed.project, updatedAt: r.updated_at };
   }
 }

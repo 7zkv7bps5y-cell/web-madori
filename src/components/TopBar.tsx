@@ -42,6 +42,7 @@ export function ModeTabs() {
 }
 
 function PlanSelect({ onManage }: { onManage: () => void }) {
+  const viewer = useStore((s) => !!s.viewer);
   const plans = useStore((s) => s.project.plans);
   const activeId = useStore((s) => s.project.activePlanId);
   const switchPlan = useStore((s) => s.switchPlan);
@@ -61,7 +62,7 @@ function PlanSelect({ onManage }: { onManage: () => void }) {
           {p.name}
         </option>
       ))}
-      <option value="__manage">案の追加・比較…</option>
+      {!viewer && <option value="__manage">案の追加・比較…</option>}
     </select>
   );
 }
@@ -98,14 +99,17 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
   const canRedo = useStore((s) => s.future.length > 0);
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
+  const viewer = useStore((s) => !!s.viewer);
   const [text, setText] = useState(name);
   useEffect(() => setText(name), [name]);
 
   const fileItems = (
     <>
-      <button role="menuitem" type="button" onClick={actions.openSave}>
-        <b>保存・出力（まとめて保存）…</b>
-      </button>
+      {!viewer && (
+        <button role="menuitem" type="button" onClick={actions.openSave}>
+          <b>保存・出力（まとめて保存）…</b>
+        </button>
+      )}
       <button role="menuitem" type="button" onClick={actions.openCloud}>
         クラウド保存（保存済みの間取り）…
       </button>
@@ -115,15 +119,19 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
       <button role="menuitem" type="button" onClick={actions.openTemplate}>
         テンプレートから始める…
       </button>
-      <button role="menuitem" type="button" onClick={actions.openPlans}>
-        間取り案の管理・比較…
-      </button>
+      {!viewer && (
+        <button role="menuitem" type="button" onClick={actions.openPlans}>
+          間取り案の管理・比較…
+        </button>
+      )}
       <button role="menuitem" type="button" onClick={actions.openFile}>
         ファイルを開く…
       </button>
-      <button role="menuitem" type="button" onClick={actions.saveFile}>
-        ファイルに保存（.floorplan）
-      </button>
+      {!viewer && (
+        <button role="menuitem" type="button" onClick={actions.saveFile}>
+          ファイルに保存（.floorplan）
+        </button>
+      )}
       <hr />
       <button role="menuitem" type="button" onClick={actions.exportImage}>
         画像（PNG）で保存…
@@ -131,12 +139,16 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
       <button role="menuitem" type="button" onClick={actions.exportPdf}>
         PDFで保存（印刷用）…
       </button>
-      <button role="menuitem" type="button" onClick={actions.shareUrl}>
-        共有用URLを作成…
-      </button>
-      <button role="menuitem" type="button" onClick={actions.copyJson}>
-        間取りデータをコピー
-      </button>
+      {!viewer && (
+        <>
+          <button role="menuitem" type="button" onClick={actions.shareUrl}>
+            共有…（共有リンク・URL）
+          </button>
+          <button role="menuitem" type="button" onClick={actions.copyJson}>
+            間取りデータをコピー
+          </button>
+        </>
+      )}
       <button role="menuitem" type="button" onClick={actions.pasteJson}>
         間取りデータを貼り付け
       </button>
@@ -164,12 +176,13 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
         value={text}
         maxLength={60}
         aria-label="プロジェクト名"
+        readOnly={viewer}
         onChange={(e) => setText(e.target.value)}
         onBlur={() => setName(text.trim() || '無題の間取り')}
         onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
       />
       <PlanSelect onManage={actions.openPlans} />
-      {!compact && (
+      {!compact && !viewer && (
         <button type="button" onClick={actions.openPlans} title="A案・B案…を並べて比較">
           比較
         </button>
@@ -178,9 +191,11 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
       <div className="spacer" />
       {compact ? (
         <>
-          <button type="button" className="primary save-btn" onClick={actions.openSave} aria-label="保存・出力">
-            保存
-          </button>
+          {!viewer && (
+            <button type="button" className="primary save-btn" onClick={actions.openSave} aria-label="保存・出力">
+              保存
+            </button>
+          )}
           <Menu label={<span aria-label="メニュー">☰</span>} className="right">
             {fileItems}
           </Menu>
@@ -200,9 +215,11 @@ export function TopBar({ actions, compact, saveState }: { actions: ProjectAction
             <button type="button" onClick={actions.openFile}>
               開く
             </button>
-            <button type="button" className="primary" onClick={actions.openSave} title="保存・出力 (Ctrl+S)">
-              保存
-            </button>
+            {!viewer && (
+              <button type="button" className="primary" onClick={actions.openSave} title="保存・出力 (Ctrl+S)">
+                保存
+              </button>
+            )}
             <Menu label="出力 ▾" className="right">
               {fileItems}
             </Menu>

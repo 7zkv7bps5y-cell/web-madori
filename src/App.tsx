@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { AddRoomDialog } from './components/AddRoomDialog';
-import { Canvas } from './components/Canvas';
-import { ExportImageDialog, ExportPdfDialog, ShareDialog, TextTransferDialog } from './components/Dialogs';
+import { Canvas, finishDraftShape } from './components/Canvas';
+import { ExportImageDialog, ExportPdfDialog, TextTransferDialog } from './components/Dialogs';
+import { SharingDialog } from './components/SharingDialog';
+import { SHARE_TOKEN_RE } from './cloud/types';
 import { decodeShare, shareTokenFromHash } from './utils/share';
 import { Palette } from './components/Palette';
 import { PropertiesPanel } from './components/PropertiesPanel';
@@ -18,10 +20,10 @@ import { TopBar, type ProjectActions } from './components/TopBar';
 import { furnitureDef } from './model/furnitureCatalog';
 import { openingDef } from './model/catalog';
 import { areaM2, formatArea } from './model/units';
-import { serializeProject, parseProject } from './model/project';
+import { copyProject, serializeProject, parseProject } from './model/project';
 import { TEMPLATES } from './model/templates';
 import { useStore } from './store/store';
-import { useView } from './store/view';
+import { MAX_ZOOM, MIN_ZOOM, useView, ZOOM_STEP, zoomPercent } from './store/view';
 import { autosave, copyText, loadAutosave, projectFileAccept, readProjectFile, readText, saveProjectFile } from './utils/io';
 
 function useMedia(query: string) {
@@ -57,32 +59,43 @@ function ZoomControls({ onHelp }: { onHelp: () => void }) {
   const requestFit = useView((s) => s.requestFit);
   const zoom = useView((s) => s.zoom);
   const showRoomDims = useView((s) => s.showRoomDims);
+  const pct = zoomPercent(zoom);
   return (
-    <div className="zoom-controls">
-      <button
-        type="button"
-        className={`dims-toggle ${showRoomDims ? 'active' : ''}`}
-        onClick={() => useView.getState().set({ showRoomDims: !showRoomDims })}
-        aria-pressed={showRoomDims}
-        title="部屋の寸法・畳数・面積の表示を切り替え"
-        aria-label="寸法表示の切り替え"
-      >
-        📏
-      </button>
-      <button type="button" onClick={() => zoomAt(1 / 1.25)} aria-label="縮小">
-        −
-      </button>
-      <span className="small">{Math.round(zoom * 1000)}%</span>
-      <button type="button" onClick={() => zoomAt(1.25)} aria-label="拡大">
-        ＋
-      </button>
-      <button type="button" onClick={requestFit} title="全体を表示" aria-label="全体を表示">
-        ⤢
-      </button>
-      <button type="button" className="help-btn" onClick={onHelp} title="操作ガイド" aria-label="操作ガイドを見る">
-        ？
-      </button>
-    </div>
+    <>
+      {/* 表示倍率（実寸は変えない）。スマホでは左下にまとめる */}
+      <div className="zoom-controls zoom-group" role="group" aria-label="表示倍率">
+        <button type="button" onClick={() => zoomAt(1 / ZOOM_STEP)} aria-label="縮小" title="縮小" disabled={zoom <= MIN_ZOOM + 1e-9}>
+          −
+        </button>
+        <span className="small zoom-pct" aria-live="polite" title="現在の表示倍率">
+          {pct}%
+        </span>
+        <button type="button" onClick={() => zoomAt(ZOOM_STEP)} aria-label="拡大" title="拡大" disabled={zoom >= MAX_ZOOM - 1e-9}>
+          ＋
+        </button>
+        <button type="button" className="zoom-reset" onClick={() => useView.getState().zoomReset()} title="表示倍率を 100% に戻す" aria-label="100% に戻す">
+          100%
+        </button>
+        <button type="button" className="zoom-fit" onClick={requestFit} title="全体を表示" aria-label="全体を表示">
+          ⤢
+        </button>
+      </div>
+      <div className="zoom-controls aux-group">
+        <button
+          type="button"
+          className={`dims-toggle ${showRoomDims ? 'active' : ''}`}
+          onClick={() => useView.getState().set({ showRoomDims: !showRoomDims })}
+          aria-pressed={showRoomDims}
+          title="部屋の寸法・畳数・面積の表示を切り替え"
+          aria-label="寸法表示の切り替え"
+        >
+          📏
+        </button>
+        <button type="button" className="help-btn" onClick={onHelp} title="操作ガイド" aria-label="操作ガイドを見る">
+          ？
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -157,45 +170,205 @@ function EmptyState({ onTemplate }: { onTemplate: () => void }) {
   );
 }
 
+/** 多角形・自由描画でカスタムパーツを描いている間の案内 */
+function DrawBanner() {
+  const tool = useStore((s) => s.tool);
+  const draft = useView((s) => s.draft);
+  if (tool.kind !== 'drawShape') return null;
+  const cancel = () => {
+    useView.getState().set({ draft: [] });
+    useStore.getState().setTool({ kind: 'select' });
+  };
+  return (
+    <div className="banner draw-banner">
+      {tool.shape === 'polygon' ? (
+        <>
+          <span>
+            <b>多角形</b>：頂点を<span className="hint-pc">クリック</span>
+            <span className="hint-touch">タップ</span>で置き、最初の点に戻るか「完成」で閉じます（{draft.length} 点）
+          </span>
+          <button type="button" className="primary" disabled={draft.length < 3} onClick={() => finishDraftShape('polygon')}>
+            完成
+          </button>
+          <button type="button" disabled={draft.length === 0} onClick={() => useView.getState().set({ draft: draft.slice(0, -1) })}>
+            1つ戻す
+          </button>
+        </>
+      ) : (
+        <span>
+          <b>自由描画</b>：指やマウスでなぞって形を描きます（離すと完成）
+        </span>
+      )}
+      <button type="button" onClick={cancel}>
+        やめる
+      </button>
+    </div>
+  );
+}
+
+function removeShareParam() {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has('share')) return;
+  params.delete('share');
+  const rest = params.toString();
+  window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash);
+}
+
+/** 共有リンクで開いた間取りの案内（閲覧専用） */
+function ViewerBanner({ onOpenCloud }: { onOpenCloud: () => void }) {
+  const viewer = useStore((s) => s.viewer);
+  const user = useAccount((s) => s.user);
+  const busy = useAccount((s) => !!s.busy);
+  if (!viewer) return null;
+  const st = useStore.getState();
+  const takeCopy = (copy: ReturnType<typeof copyProject>, message: string) => {
+    useStore.getState().copyViewerToLocal(copy);
+    removeShareParam();
+    autosave(useStore.getState().project);
+    st.notify(message);
+  };
+  return (
+    <div className="viewer-banner" role="region" aria-label="閲覧専用の案内">
+      <div className="viewer-title">
+        <span className="viewer-tag">閲覧のみ</span>
+        <strong className="ellipsis">共有された間取り「{viewer.name}」</strong>
+      </div>
+      <div className="viewer-actions">
+        <button
+          type="button"
+          className="primary"
+          aria-label="自分のデータとして保存"
+          disabled={busy}
+          onClick={async () => {
+            if (!user) {
+              st.notify('「自分のデータとして保存」するにはログインしてください。ログイン後にもう一度押してください。');
+              return onOpenCloud();
+            }
+            const copy = copyProject(useStore.getState().project, viewer.name);
+            const item = await useAccount.getState().saveNew(copy.projectName, copy);
+            if (!item) {
+              const err = useAccount.getState().error;
+              return st.notify(err ?? '保存できませんでした。', 'error');
+            }
+            takeCopy(copy, `「${copy.projectName}」を自分のクラウド保存にコピーしました。自由に編集できます（元の間取りには影響しません）。`);
+          }}
+        >
+          <span className="lbl-long">自分のデータとして保存</span>
+          <span className="lbl-short">自分用に保存</span>
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            takeCopy(copyProject(useStore.getState().project, viewer.name), 'この端末にコピーしました。自由に編集できます（元の間取りには影響しません）。')
+          }
+        >
+          コピーして編集
+        </button>
+        <button
+          type="button"
+          className="viewer-close"
+          aria-label="閉じる"
+          onClick={() => {
+            st.exitViewer();
+            removeShareParam();
+            useView.getState().requestFit();
+          }}
+        >
+          閉じる
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** 共有リンク（?share=トークン）で開いたときに、その間取りを閲覧モードで表示する */
+async function openSharedLink(token: string) {
+  const st = useStore.getState();
+  if (!SHARE_TOKEN_RE.test(token)) {
+    removeShareParam();
+    return st.notify('共有リンクの形式が正しくありません。リンクを最後までコピーできているか確認してください。', 'error');
+  }
+  const acc = useAccount.getState();
+  if (acc.mode === 'unconfigured') {
+    removeShareParam();
+    return st.notify('共有リンクは、この環境ではまだ使えません。', 'error');
+  }
+  const shared = await acc.loadShared(token);
+  if (!shared) {
+    removeShareParam();
+    const err = useAccount.getState().error;
+    useAccount.getState().clearError();
+    return st.notify(err ?? 'この共有リンクは停止されたか、存在しません。', 'error');
+  }
+  useStore.getState().enterViewer(shared.project, { name: shared.name, token, updatedAt: shared.updatedAt });
+  useView.getState().requestFit();
+  st.notify(`共有された間取り「${shared.name}」を表示しています（閲覧のみ）。`);
+}
+
+/** 閲覧モードの左側（パーツ一覧の代わり） */
+function ViewerSideNote() {
+  return (
+    <div className="props viewer-side">
+      <h2>閲覧モード</h2>
+      <p className="small">
+        共有された間取りを表示しています。部屋・家具などを<span className="hint-pc">クリック</span>
+        <span className="hint-touch">タップ</span>すると、登録された写真・リンク・メモを見られます。
+      </p>
+      <p className="muted small">編集するには、上の「自分のデータとして保存」か「コピーして編集」を押してください。元の間取りは変わりません。</p>
+    </div>
+  );
+}
+
 /** スマートフォン: 選択中オブジェクトのクイック操作 */
 function MobileSelectionBar({ onDetail }: { onDetail: () => void }) {
   const selection = useStore((s) => s.selection);
   const project = useStore((s) => s.project);
+  const viewer = useStore((s) => !!s.viewer);
   const st = useStore.getState();
   if (!selection) return null;
+  const custom = selection.kind === 'custom' ? project.customParts.find((c) => c.id === selection.id) : undefined;
   const label =
     selection.kind === 'room'
       ? project.rooms.find((r) => r.id === selection.id)?.name
       : selection.kind === 'opening'
         ? openingDef(project.openings.find((o) => o.id === selection.id)?.type ?? 'door').label
-        : project.furniture.find((f) => f.id === selection.id)?.name ?? furnitureDef('').label;
+        : selection.kind === 'custom'
+          ? custom?.name || 'カスタムパーツ'
+          : project.furniture.find((f) => f.id === selection.id)?.name ?? furnitureDef('').label;
   const room = selection.kind === 'room' ? project.rooms.find((r) => r.id === selection.id) : undefined;
   const fur = selection.kind === 'furniture' ? project.furniture.find((f) => f.id === selection.id) : undefined;
   const detail = room
     ? `${formatArea(areaM2(room.w, room.h), 'tatami', project.settings.tatamiArea)}・${Math.round(room.w / 10)}×${Math.round(room.h / 10)}cm`
     : fur
       ? `${Math.round(fur.w / 10)}×${Math.round(fur.d / 10)}cm`
-      : '';
+      : custom
+        ? `${Math.round(custom.w / 10)}×${Math.round(custom.h / 10)}cm`
+        : '';
   return (
     <div className="mobile-selbar">
       <div className="selbar-title">
         <strong className="ellipsis">{label}</strong>
         {detail && <span className="ellipsis small muted">{detail}</span>}
       </div>
-      {selection.kind !== 'opening' && (
+      {!viewer && selection.kind !== 'opening' && (
         <button type="button" onClick={() => st.rotateSelection()}>
           ↻
           <small>回転</small>
         </button>
       )}
-      <button type="button" onClick={() => st.duplicateSelection()}>
-        ⧉<small>複製</small>
-      </button>
-      <button type="button" className="danger" onClick={() => st.deleteSelection()}>
-        🗑<small>削除</small>
-      </button>
+      {!viewer && (
+        <>
+          <button type="button" onClick={() => st.duplicateSelection()}>
+            ⧉<small>複製</small>
+          </button>
+          <button type="button" className="danger" onClick={() => st.deleteSelection()}>
+            🗑<small>削除</small>
+          </button>
+        </>
+      )}
       <button type="button" className="primary" onClick={onDetail}>
-        ⚙<small>詳細</small>
+        {viewer ? 'ⓘ' : '⚙'}
+        <small>詳細</small>
       </button>
     </div>
   );
@@ -221,6 +394,7 @@ export default function App() {
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
   const selection = useStore((s) => s.selection);
+  const viewer = useStore((s) => !!s.viewer);
 
   // 自動保存の復元。?template=ID で開いた場合はそのテンプレートを読み込む（元に戻すで直前の間取りに戻せる）
   useEffect(() => {
@@ -247,6 +421,9 @@ export default function App() {
         autosave(useStore.getState().project);
       });
     }
+    // 共有リンク（?share=トークン）で開いた場合は閲覧モードで表示する（自分の間取りは裏で保持）
+    const shareToken = params.get('share');
+    if (shareToken) void openSharedLink(shareToken);
     // このアプリ用の指定（template / new / 共有 #p=）だけを URL から消す。
     // ログイン用リンクの code などは認証処理が読むので残す
     const own = ['template', 'new'];
@@ -279,7 +456,8 @@ export default function App() {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const unsub = useStore.subscribe((s, prev) => {
-      if (s.project === prev.project || s.dragBase) return;
+      // 閲覧モード（共有リンク）の間は、自分の自動保存を上書きしない
+      if (s.project === prev.project || s.dragBase || s.viewer) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
         const ok = autosave(useStore.getState().project);
@@ -350,7 +528,7 @@ export default function App() {
         st.duplicateSelection();
       } else if (mod && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        setSaveOpen(true);
+        if (!st.viewer) setSaveOpen(true);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (st.selection) {
           e.preventDefault();
@@ -383,11 +561,12 @@ export default function App() {
   return (
     <div className={`app ${mobile ? 'is-mobile' : ''}`}>
       <TopBar actions={actions} compact={mobile} saveState={saveState} />
+      <ViewerBanner onOpenCloud={() => setCloudOpen(true)} />
       <main className="workspace">
         {!mobile && (
           <aside className="sidebar left" aria-label="パーツ一覧">
             <ScrollArea>
-              <Palette />
+              {viewer ? <ViewerSideNote /> : <Palette />}
               {/* 広告枠（AdSense 設定時のみ表示。キャンバス内には置かない） */}
               <aside className="ad-slot" data-ad-slot="editor-sidebar" aria-label="広告" />
             </ScrollArea>
@@ -396,8 +575,9 @@ export default function App() {
         <section className="stage">
           <Canvas touchUi={coarse || mobile} />
           <PlacementBanner />
+          <DrawBanner />
           <FloorTabs />
-          <EmptyState onTemplate={actions.openTemplate} />
+          {!viewer && <EmptyState onTemplate={actions.openTemplate} />}
           <ZoomControls onHelp={() => setGuideOpen(true)} />
         </section>
         {!mobile && (
@@ -411,7 +591,7 @@ export default function App() {
         {mobile && sheet !== 'none' && (
           <div className="sheet" role="dialog" aria-label={sheet === 'parts' ? 'パーツ一覧' : '設定'}>
             <div className="sheet-head">
-              <strong>{sheet === 'parts' ? (mode === 'plan' ? 'パーツ（部屋・ドア・窓）' : '家具・家電') : '設定'}</strong>
+              <strong>{sheet === 'parts' ? (mode === 'plan' ? 'パーツ（部屋・ドア・窓）' : '家具・家電') : viewer ? '情報（閲覧のみ）' : '設定'}</strong>
               <button type="button" onClick={() => setSheet('none')} aria-label="閉じる">
                 ✕
               </button>
@@ -427,15 +607,21 @@ export default function App() {
         <>
           {sheet === 'none' && <MobileSelectionBar onDetail={() => setSheet('props')} />}
           <nav className="bottombar" aria-label="ツールバー">
-            <button type="button" className={sheet === 'parts' ? 'active' : ''} onClick={() => setSheet(sheet === 'parts' ? 'none' : 'parts')}>
-              ＋<small>パーツ</small>
-            </button>
-            <button type="button" onClick={() => useStore.getState().undo()} disabled={!canUndo}>
-              ↶<small>戻す</small>
-            </button>
-            <button type="button" onClick={() => useStore.getState().redo()} disabled={!canRedo}>
-              ↷<small>やり直す</small>
-            </button>
+            {!viewer && (
+              <button type="button" className={sheet === 'parts' ? 'active' : ''} onClick={() => setSheet(sheet === 'parts' ? 'none' : 'parts')}>
+                ＋<small>パーツ</small>
+              </button>
+            )}
+            {!viewer && (
+              <>
+                <button type="button" onClick={() => useStore.getState().undo()} disabled={!canUndo}>
+                  ↶<small>戻す</small>
+                </button>
+                <button type="button" onClick={() => useStore.getState().redo()} disabled={!canRedo}>
+                  ↷<small>やり直す</small>
+                </button>
+              </>
+            )}
             <button type="button" onClick={() => useView.getState().requestFit()}>
               ⤢<small>全体</small>
             </button>
@@ -450,7 +636,8 @@ export default function App() {
               <small>{mode === 'plan' ? '家具配置へ' : '間取りへ'}</small>
             </button>
             <button type="button" className={sheet === 'props' ? 'active' : ''} onClick={() => setSheet(sheet === 'props' ? 'none' : 'props')}>
-              ⚙<small>設定</small>
+              {viewer ? 'ⓘ' : '⚙'}
+              <small>{viewer ? '情報' : '設定'}</small>
             </button>
           </nav>
         </>
@@ -504,7 +691,15 @@ export default function App() {
       )}
       {cloudOpen && <CloudDialog onClose={() => setCloudOpen(false)} onOpenLocalSave={() => setSaveOpen(true)} />}
       {pdfOpen && <ExportPdfDialog onClose={() => setPdfOpen(false)} />}
-      {shareOpen && <ShareDialog onClose={() => setShareOpen(false)} />}
+      {shareOpen && (
+        <SharingDialog
+          onClose={() => setShareOpen(false)}
+          onOpenCloud={() => {
+            setShareOpen(false);
+            setCloudOpen(true);
+          }}
+        />
+      )}
       {plansOpen && <PlansDialog onClose={() => setPlansOpen(false)} />}
       {exportOpen && <ExportImageDialog onClose={() => setExportOpen(false)} />}
       {transfer && <TextTransferDialog mode={transfer.mode} text={transfer.text} onClose={() => setTransfer(null)} />}

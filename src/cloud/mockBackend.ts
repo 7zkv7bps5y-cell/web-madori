@@ -9,7 +9,18 @@ import { canCreateCloudSave, planConfig, type PlanId } from '../billing/plans';
 import { parseProject } from '../model/project';
 import type { Project } from '../model/types';
 import { toCloudJson } from './supabaseBackend';
-import { CloudError, CONFLICT_MESSAGE, QUOTA_MESSAGE, type CloudBackend, type CloudItem, type CloudUser } from './types';
+import {
+  CloudError,
+  CONFLICT_MESSAGE,
+  QUOTA_MESSAGE,
+  SHARE_NOT_FOUND,
+  SHARE_TOKEN_RE,
+  type CloudBackend,
+  type CloudItem,
+  type CloudUser,
+  type SharedFloorplan,
+  type ShareInfo,
+} from './types';
 
 interface Row extends CloudItem {
   userId: string;
@@ -20,6 +31,15 @@ interface Db {
   rows: Row[];
   plans: Record<string, PlanId>;
   session: CloudUser | null;
+  /** 共有リンク（データベースの floorplan_shares と同じ規則） */
+  shares?: { floorplanId: string; userId: string; token: string; createdAt: string }[];
+}
+
+/** 64 文字のランダムな識別子（サーバーの生成方法と同じ形式） */
+function randomToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export interface MockOptions {
@@ -163,7 +183,40 @@ export class MockBackend implements CloudBackend {
     this.reload();
     const row = this.find(id);
     this.db.rows = this.db.rows.filter((r) => r !== row);
+    // 間取りを消すと共有も消える（データベースの on delete cascade と同じ）
+    this.db.shares = (this.db.shares ?? []).filter((s) => s.floorplanId !== row.id);
     this.save();
+  }
+
+  async listShares(): Promise<ShareInfo[]> {
+    this.reload();
+    const me = this.me();
+    return (this.db.shares ?? []).filter((s) => s.userId === me.id).map(({ floorplanId, token, createdAt }) => ({ floorplanId, token, createdAt }));
+  }
+  async issueShare(floorplanId: string): Promise<ShareInfo> {
+    this.reload();
+    const row = this.find(floorplanId); // 自分の間取りでなければ not_found
+    const shares = (this.db.shares ?? []).filter((s) => s.floorplanId !== row.id);
+    const share = { floorplanId: row.id, userId: row.userId, token: randomToken(), createdAt: this.now() };
+    this.db.shares = [...shares, share];
+    this.save();
+    return { floorplanId: share.floorplanId, token: share.token, createdAt: share.createdAt };
+  }
+  async revokeShare(floorplanId: string) {
+    this.reload();
+    const me = this.me();
+    this.db.shares = (this.db.shares ?? []).filter((s) => !(s.floorplanId === floorplanId && s.userId === me.id));
+    this.save();
+  }
+  /** ログイン不要 */
+  async getShared(token: string): Promise<SharedFloorplan> {
+    this.reload();
+    const share = SHARE_TOKEN_RE.test(token) ? (this.db.shares ?? []).find((s) => s.token === token) : undefined;
+    const row = share && this.db.rows.find((r) => r.id === share.floorplanId);
+    if (!row) throw new CloudError('not_found', SHARE_NOT_FOUND);
+    const r = parseProject(JSON.stringify(row.data));
+    if (!r.ok) throw new CloudError('invalid_data', r.error);
+    return { name: row.name, project: r.project, updatedAt: row.updatedAt };
   }
 }
 

@@ -67,6 +67,8 @@ export interface Room extends Rect {
   /** 将来の L字などの多角形対応用。現状は 'rect' のみ */
   shape: 'rect';
   style: RoomStyle;
+  /** 参考情報（画像・URL・メモ）。図面には描かず、選んだときに表示する */
+  info?: PartInfo;
 }
 
 export const OPENING_TYPES = [
@@ -96,6 +98,7 @@ export interface Opening {
   hinge: 'start' | 'end';
   /** ドアの開く向き（in = 紐づく部屋の内側） */
   swing: 'in' | 'out';
+  info?: PartInfo;
 }
 
 /**
@@ -122,6 +125,85 @@ export interface Furniture {
   rotation: number;
   /** 将来の家具商品連携用。実在商品の ID（未連携は null） */
   productId: string | null;
+  info?: PartInfo;
+}
+
+/**
+ * パーツに添付する参考情報（画像・URL・メモ）。すべて任意。
+ * 図面（キャンバス・PNG・PDF）には描かず、パーツを選んだときに詳細として表示する。
+ */
+export interface PartInfo {
+  title?: string;
+  productName?: string;
+  description?: string;
+  /** 価格（円） */
+  price?: number;
+  /** 寸法・仕様 */
+  specs?: string;
+  memo?: string;
+  links: PartLink[];
+  images: PartImage[];
+}
+
+export interface PartLink {
+  /** http / https のみ */
+  url: string;
+  label?: string;
+}
+
+/**
+ * 画像。url = 外部の画像（https のみ）、embedded = 端末の写真を縮小して間取りデータに埋め込んだもの
+ * （data:image/jpeg|png|webp;base64 のみ。SVG は不可）
+ */
+export interface PartImage {
+  id: string;
+  kind: 'url' | 'embedded';
+  src: string;
+  caption?: string;
+}
+
+export const CUSTOM_SHAPES = ['rect', 'circle', 'ellipse', 'polygon', 'freehand'] as const;
+export type CustomShape = (typeof CUSTOM_SHAPES)[number];
+export const CUSTOM_PATTERNS = ['none', 'hatch', 'cross', 'dots', 'grid', 'wood'] as const;
+export type CustomPattern = (typeof CUSTOM_PATTERNS)[number];
+
+/** カスタムパーツの形と見た目（パーツライブラリにも同じ形で保存する） */
+export interface CustomPartDesign {
+  name: string;
+  shape: CustomShape;
+  /**
+   * polygon / freehand の頂点。幅・高さを 1 とした中心基準の座標（-0.5〜0.5）。
+   * 大きさを変えると頂点もそれに合わせて伸び縮みする
+   */
+  points?: [number, number][];
+  fill: string;
+  stroke: string;
+  /** 枠線の太さ (mm) */
+  strokeWidth: number;
+  /** 0〜1 */
+  opacity: number;
+  pattern: CustomPattern;
+  /** 図形の中に書く文字（任意） */
+  text?: string;
+  /** パーツ名を図形の中に表示するか */
+  showName: boolean;
+}
+
+/**
+ * カスタムパーツ（利用者が作る図形）。部屋・家具とは別のデータとして持つ。
+ * 中心座標・幅(w)・高さ(h)・回転（度）は家具と同じ扱い。
+ */
+export interface CustomPart extends CustomPartDesign {
+  id: string;
+  floorId: string;
+  x: Mm;
+  y: Mm;
+  w: Mm;
+  h: Mm;
+  rotation: number;
+  /** パーツライブラリから置いた場合の元 ID（記録用。ライブラリを変えても配置済みのパーツは変わらない） */
+  libraryId: string | null;
+  info?: PartInfo;
 }
 
 export interface Floor {
@@ -150,7 +232,12 @@ export interface ProjectSettings {
 }
 
 export const PROJECT_FORMAT = 'web-madori' as const;
-export const PROJECT_VERSION = 2 as const;
+/**
+ * 形式のバージョン。
+ * 1: 初版 / 2: 複数案 / 3: カスタムパーツ・パーツの参考情報（画像・URL・メモ）を追加
+ * 新しい項目を古いアプリで読み込むと黙って捨てられるため、項目を追加したら上げる（古いアプリは読み込みを拒否する）
+ */
+export const PROJECT_VERSION = 3 as const;
 
 /** 1 つの間取り案の中身 */
 export interface PlanContent {
@@ -158,6 +245,7 @@ export interface PlanContent {
   rooms: Room[];
   openings: Opening[];
   furniture: Furniture[];
+  customParts: CustomPart[];
   activeFloorId: string;
 }
 
@@ -184,6 +272,7 @@ export interface Project {
   rooms: Room[];
   openings: Opening[];
   furniture: Furniture[];
+  customParts: CustomPart[];
   /* ---- 案の一覧 ---- */
   activePlanId: string;
   plans: PlanEntry[];
@@ -216,6 +305,7 @@ export interface Connection {
 export type Selection =
   | { kind: 'room'; id: string }
   | { kind: 'opening'; id: string }
-  | { kind: 'furniture'; id: string };
+  | { kind: 'furniture'; id: string }
+  | { kind: 'custom'; id: string };
 
 export type EditorMode = 'plan' | 'furniture';

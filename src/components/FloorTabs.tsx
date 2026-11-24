@@ -8,6 +8,7 @@ export function FloorTabs() {
   const active = useStore((s) => s.project.settings.activeFloorId);
   const setActive = useStore((s) => s.setActiveFloor);
   const addFloor = useStore((s) => s.addFloor);
+  const viewer = useStore((s) => !!s.viewer);
   return (
     <div className="floor-tabs" role="tablist" aria-label="階の切り替え">
       {sortedFloors({ floors }).map((f) => (
@@ -15,7 +16,7 @@ export function FloorTabs() {
           {f.name}
         </button>
       ))}
-      {floors.length < MAX_FLOORS && (
+      {!viewer && floors.length < MAX_FLOORS && (
         <button
           type="button"
           className="add"

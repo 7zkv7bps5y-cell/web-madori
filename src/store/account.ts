@@ -7,7 +7,7 @@
 import { create } from 'zustand';
 import { planConfig, type PlanConfig } from '../billing/plans';
 import { cloudMode, supabaseEnv, type CloudMode } from '../cloud/config';
-import { CloudError, type CloudBackend, type CloudItem, type CloudStatus, type CloudUser } from '../cloud/types';
+import { CloudError, type CloudBackend, type CloudItem, type CloudStatus, type CloudUser, type SharedFloorplan, type ShareInfo } from '../cloud/types';
 import type { Project } from '../model/types';
 
 export interface CloudLink {
@@ -77,6 +77,8 @@ interface AccountState {
   user: CloudUser | null;
   status: CloudStatus | null;
   items: CloudItem[];
+  /** 自分が発行している共有リンク */
+  shares: ShareInfo[];
   busy: string | null;
   error: string | null;
   /** ほかの端末で更新されていたため上書きを止めた間取り（確認待ち） */
@@ -96,6 +98,15 @@ interface AccountState {
   unlink: () => void;
   clearError: () => void;
   clearConflict: () => void;
+  issueShare: (floorplanId: string) => Promise<ShareInfo | null>;
+  revokeShare: (floorplanId: string) => Promise<boolean>;
+  /** 共有リンクの間取りを読む（ログイン不要） */
+  loadShared: (token: string) => Promise<SharedFloorplan | null>;
+}
+
+/** 共有リンクの URL */
+export function shareLinkUrl(token: string, origin = typeof window !== 'undefined' ? window.location.origin : '') {
+  return `${origin}/editor/?share=${token}`;
 }
 
 const message = (e: unknown) => (e instanceof CloudError ? e.message : 'クラウド保存でエラーが発生しました。編集中の内容は消えていません。');
@@ -135,6 +146,7 @@ export const useAccount = create<AccountState>((set, get) => {
     user: null,
     status: null,
     items: [],
+    shares: [],
     busy: null,
     error: null,
     conflict: null,
@@ -165,8 +177,8 @@ export const useAccount = create<AccountState>((set, get) => {
     refresh: () => {
       refreshPromise ??= (async () => {
         await run('読み込み中', async (b) => {
-          const [status, items] = await Promise.all([b.status(), b.list()]);
-          set({ status, items });
+          const [status, items, shares] = await Promise.all([b.status(), b.list(), b.listShares().catch(() => [])]);
+          set({ status, items, shares });
           // 結びついていたクラウドの間取りが消えていたら解除
           const link = get().link;
           if (link && !items.some((i) => i.id === link.cloudId)) get().unlink();
@@ -197,7 +209,7 @@ export const useAccount = create<AccountState>((set, get) => {
 
     signOut: async () => {
       await run('ログアウト中', (b) => b.signOut());
-      set({ user: null, status: null, items: [] });
+      set({ user: null, status: null, items: [], shares: [] });
       get().unlink();
     },
 
@@ -265,6 +277,21 @@ export const useAccount = create<AccountState>((set, get) => {
 
     clearError: () => set({ error: null }),
     clearConflict: () => set({ conflict: null }),
+
+    issueShare: async (floorplanId) => {
+      const share = await run('共有リンクを発行中', (b) => b.issueShare(floorplanId));
+      if (share) set({ shares: [...get().shares.filter((s) => s.floorplanId !== floorplanId), share] });
+      return share;
+    },
+    revokeShare: async (floorplanId) => {
+      const ok = (await run('共有を停止中', (b) => b.revokeShare(floorplanId).then(() => true))) ?? false;
+      if (ok) set({ shares: get().shares.filter((s) => s.floorplanId !== floorplanId) });
+      return ok;
+    },
+    loadShared: async (token) => {
+      await get().init();
+      return run('共有された間取りを読み込み中', (b) => b.getShared(token));
+    },
   };
 });
 

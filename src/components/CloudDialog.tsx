@@ -5,6 +5,7 @@ import { useStore } from '../store/store';
 import { useView } from '../store/view';
 import { saveProjectFile } from '../utils/io';
 import { Modal } from './Dialogs';
+import { SharePanel } from './SharingDialog';
 
 const fmtDate = (iso: string) => {
   const d = new Date(iso);
@@ -16,6 +17,8 @@ export function CloudDialog({ onClose, onOpenLocalSave }: { onClose: () => void;
   const acc = useAccount();
   const project = useStore((s) => s.project);
   const notify = useStore((s) => s.notify);
+  const viewer = useStore((s) => !!s.viewer);
+  const [shareFor, setShareFor] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [code, setCode] = useState('');
@@ -202,7 +205,11 @@ export function CloudDialog({ onClose, onOpenLocalSave }: { onClose: () => void;
 
       <section className="cloud-current">
         <h3>編集中の間取り</h3>
-        {linked ? (
+        {viewer ? (
+          <p className="small">
+            いまは共有された間取りを閲覧中です。自分のクラウド保存に入れるには、画面上部の「自分のデータとして保存」を押してください（1 件使います）。
+          </p>
+        ) : linked ? (
           <>
             <p className="small">
               クラウドの「<b>{linked.name}</b>」と結びついています。上書き保存しても保存件数は増えません。
@@ -295,6 +302,7 @@ export function CloudDialog({ onClose, onOpenLocalSave }: { onClose: () => void;
               <li key={it.id} className={linked?.cloudId === it.id ? 'linked' : ''}>
                 <div className="cloud-item-head">
                   <strong className="ellipsis">{it.name}</strong>
+                  {acc.shares.some((x) => x.floorplanId === it.id) && <span className="share-on">共有中</span>}
                   <span className="muted small">更新 {fmtDate(it.updatedAt)}</span>
                 </div>
                 <div className="cloud-item-actions">
@@ -303,7 +311,15 @@ export function CloudDialog({ onClose, onOpenLocalSave }: { onClose: () => void;
                   </button>
                   <button
                     type="button"
-                    disabled={busy}
+                    className={shareFor === it.id ? 'active' : ''}
+                    aria-expanded={shareFor === it.id}
+                    onClick={() => setShareFor(shareFor === it.id ? null : it.id)}
+                  >
+                    共有
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || viewer}
                     onClick={async () => {
                       if (!window.confirm(`「${it.name}」を、今編集している間取りで上書きしますか？`)) return;
                       if (await acc.overwrite(it.id, it.name, useStore.getState().project)) notify(`「${it.name}」に上書き保存しました。`);
@@ -344,6 +360,7 @@ export function CloudDialog({ onClose, onOpenLocalSave }: { onClose: () => void;
                     削除
                   </button>
                 </div>
+                {shareFor === it.id && <SharePanel floorplanId={it.id} name={it.name} />}
               </li>
             ))}
           </ul>

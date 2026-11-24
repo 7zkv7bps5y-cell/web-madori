@@ -15,6 +15,9 @@ import { useView } from '../store/view';
 import { activeRooms, useStore } from '../store/store';
 import { NumberField, Segmented, TextField, toUnit, UNIT_FACTOR, type LengthUnit } from './fields';
 import { FurnitureProps, FurnitureSummary } from './FurniturePanel';
+import { CustomPartProps } from './CustomPartProps';
+import { PartInfoSection } from './PartInfo';
+import { ViewerPanel } from './ViewerPanel';
 
 const SIDE_LABEL: Record<Side, string> = { top: '上', right: '右', bottom: '下', left: '左' };
 
@@ -191,6 +194,8 @@ function RoomProps({ room }: { room: Room }) {
         </div>
       </div>
 
+      <PartInfoSection info={room.info} project={project} onChange={(i) => st.setPartInfo({ kind: 'room', id: room.id }, i)} />
+
       <div className="actions">
         <button type="button" onClick={() => st.rotateRoom(room.id)} title="90°回転 (R)">
           ↻ 回転
@@ -272,6 +277,7 @@ function OpeningProps({ opening }: { opening: Opening }) {
           </button>
         </div>
       )}
+      <PartInfoSection info={opening.info} project={project} onChange={(i) => st.setPartInfo({ kind: 'opening', id: opening.id }, i)} />
       <div className="actions">
         <button type="button" onClick={() => st.duplicateSelection()}>
           ⧉ 複製
@@ -395,6 +401,13 @@ export function PropertiesPanel() {
   const project = useStore((s) => s.project);
   const selection = useStore((s) => s.selection);
   const mode = useStore((s) => s.mode);
+  const viewer = useStore((s) => s.viewer);
+  // 共有リンクの閲覧中は、選んだパーツの情報だけを表示（編集できない）
+  if (viewer) return <ViewerPanel />;
+  if (selection?.kind === 'custom') {
+    const c = project.customParts.find((x) => x.id === selection.id);
+    if (c) return <CustomPartProps key={c.id} part={c} />;
+  }
   if (mode === 'furniture') {
     const f = selection?.kind === 'furniture' ? project.furniture.find((x) => x.id === selection.id) : undefined;
     return f ? <FurnitureProps key={f.id} item={f} /> : <FurnitureSummary />;

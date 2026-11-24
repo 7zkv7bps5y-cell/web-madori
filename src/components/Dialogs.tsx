@@ -5,8 +5,6 @@ import { ScrollArea } from './ScrollArea';
 import { useView } from '../store/view';
 import { DEFAULT_IMAGE_OPTIONS, exportPng, type ImageOptions } from '../utils/exportImage';
 import { DEFAULT_PDF_OPTIONS, exportPdf, type PdfOptions } from '../utils/exportPdf';
-import { copyText } from '../utils/io';
-import { buildShareUrl, SHARE_URL_WARN } from '../utils/share';
 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   return (
@@ -239,70 +237,3 @@ export function ExportPdfDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** 共有用URLの作成（データは URL の中だけにあり、サーバーには保存されない） */
-export function ShareDialog({ onClose }: { onClose: () => void }) {
-  const project = useStore((s) => s.project);
-  const notify = useStore((s) => s.notify);
-  const [url, setUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    let alive = true;
-    buildShareUrl(project).then(
-      (u) => alive && setUrl(u),
-      () => alive && setError('共有用URLを作成できませんでした。'),
-    );
-    return () => {
-      alive = false;
-    };
-  }, [project]);
-  const canNativeShare = typeof navigator !== 'undefined' && 'share' in navigator;
-  return (
-    <Modal title="共有用URLを作成" onClose={onClose}>
-      <p className="muted small">
-        このURLを開くと、今の間取り（すべての階・案）のコピーが開きます。受け取った人が編集しても、あなたの間取りは変わりません。
-        間取りのデータはURLの中だけに入っていて、運営者のサーバーには保存されません。URLを知っている人は誰でも開けるので、共有する相手に注意してください。
-      </p>
-      {error && <p className="error small">{error}</p>}
-      {url && (
-        <>
-          <textarea ref={ref} className="transfer share-url" readOnly value={url} onFocus={(e) => e.target.select()} />
-          <p className="muted small">
-            URLの長さ：{url.length.toLocaleString()} 文字
-            {url.length > SHARE_URL_WARN &&
-              '（長いため、SNSやメッセージアプリでは途中で切れることがあります。その場合は「ファイルに保存」したファイルを送ってください）'}
-          </p>
-        </>
-      )}
-      <div className="modal-actions">
-        <button type="button" onClick={onClose}>
-          閉じる
-        </button>
-        {url && canNativeShare && (
-          <button
-            type="button"
-            onClick={() => navigator.share({ title: project.projectName, url }).catch(() => undefined)}
-          >
-            ほかのアプリで共有
-          </button>
-        )}
-        <button
-          type="button"
-          className="primary"
-          disabled={!url}
-          onClick={async () => {
-            if (!url) return;
-            if (await copyText(url)) notify('共有用URLをコピーしました。');
-            else {
-              ref.current?.focus();
-              ref.current?.select();
-              notify('URLを選択しました。コピーして共有してください。');
-            }
-          }}
-        >
-          URLをコピー
-        </button>
-      </div>
-    </Modal>
-  );
-}

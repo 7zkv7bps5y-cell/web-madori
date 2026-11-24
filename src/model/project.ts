@@ -8,6 +8,8 @@ import {
   PROJECT_FORMAT,
   PROJECT_VERSION,
   ROOM_TYPES,
+  CUSTOM_PATTERNS,
+  CUSTOM_SHAPES,
   type Furniture,
   type Opening,
   type OpeningType,
@@ -51,6 +53,7 @@ export function createProject(name = '無題の間取り'): Project {
     rooms: [],
     openings: [],
     furniture: [],
+    customParts: [],
     activePlanId: planId,
     plans: [{ id: planId, name: 'A案', createdAt: now, updatedAt: now, content: null }],
     settings: {
@@ -126,6 +129,7 @@ export function activeContent(p: Project): PlanContent {
     rooms: p.rooms,
     openings: p.openings,
     furniture: p.furniture,
+    customParts: p.customParts,
     activeFloorId: p.settings.activeFloorId,
   };
 }
@@ -145,6 +149,7 @@ function withContent(p: Project, c: PlanContent): Project {
     rooms: c.rooms,
     openings: c.openings,
     furniture: c.furniture,
+    customParts: c.customParts,
     settings: { ...p.settings, activeFloorId: c.activeFloorId },
   };
 }
@@ -181,13 +186,20 @@ export function cloneContent(c: PlanContent): PlanContent {
     rooms: c.rooms.map((r) => ({ ...r, id: roomMap.get(r.id)!, floorId: fl(r.floorId), style: { ...r.style } })),
     openings: c.openings.map((o) => ({ ...o, id: uid('op'), floorId: fl(o.floorId), roomId: roomMap.get(o.roomId) ?? o.roomId })),
     furniture: c.furniture.map((f) => ({ ...f, id: uid('fur'), floorId: fl(f.floorId) })),
+    customParts: c.customParts.map((cp) => ({ ...cp, id: uid('cp'), floorId: fl(cp.floorId) })),
     activeFloorId: fl(c.activeFloorId),
   };
 }
 
+/** 別の間取りとしてのコピー（新しい projectId。中身はそのまま）。共有された間取りを自分のものにする時に使う */
+export function copyProject(p: Project, name: string): Project {
+  const now = new Date().toISOString();
+  return { ...structuredClone(p), projectId: uid('prj'), projectName: name.slice(0, 200), createdAt: now, updatedAt: now };
+}
+
 export function emptyContent(): PlanContent {
   const floorId = uid('floor');
-  return { floors: [{ id: floorId, name: '1階', level: 1, height: 2400 }], rooms: [], openings: [], furniture: [], activeFloorId: floorId };
+  return { floors: [{ id: floorId, name: '1階', level: 1, height: 2400 }], rooms: [], openings: [], furniture: [], customParts: [], activeFloorId: floorId };
 }
 
 /** 案を追加して編集中にする。from を省略すると空の案 */
@@ -224,6 +236,85 @@ const size = num.positive().max(1_000_000);
 const id = z.string().min(1).max(64);
 const text = z.string().max(200);
 
+// ---- 参考情報（画像・URL・メモ）----
+/** 外部リンク: http / https のみ（javascript: などは拒否） */
+export function isSafeLinkUrl(u: string): boolean {
+  try {
+    const url = new URL(u);
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+/** 外部画像: https のみ */
+export function isSafeImageUrl(u: string): boolean {
+  try {
+    return new URL(u).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+/** 埋め込み画像の最大文字数（約 200KB の画像を base64 にした長さ） */
+export const MAX_EMBEDDED_IMAGE_CHARS = 280_000;
+export const EMBEDDED_IMAGE_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/;
+
+const partImageSchema = z.discriminatedUnion('kind', [
+  z.object({
+    id,
+    kind: z.literal('url'),
+    src: z.string().max(2000).refine(isSafeImageUrl, '画像の URL は https のみ使えます'),
+    caption: z.string().max(200).optional(),
+  }),
+  z.object({
+    id,
+    kind: z.literal('embedded'),
+    src: z.string().max(MAX_EMBEDDED_IMAGE_CHARS).regex(EMBEDDED_IMAGE_RE, '画像の形式が正しくありません（JPEG・PNG・WebP のみ）'),
+    caption: z.string().max(200).optional(),
+  }),
+]);
+
+const partInfoSchema = z.object({
+  title: z.string().max(200).optional(),
+  productName: z.string().max(200).optional(),
+  description: z.string().max(4000).optional(),
+  price: z.number().finite().nonnegative().max(1_000_000_000).optional(),
+  specs: z.string().max(2000).optional(),
+  memo: z.string().max(4000).optional(),
+  links: z
+    .array(z.object({ url: z.string().max(2000).refine(isSafeLinkUrl, 'リンクは http / https のみ使えます'), label: z.string().max(200).optional() }))
+    .max(20)
+    .default([]),
+  images: z.array(partImageSchema).max(20).default([]),
+});
+
+const color = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+
+const customPartSchema = z.object({
+  id,
+  floorId: id,
+  name: text,
+  shape: z.enum(CUSTOM_SHAPES),
+  points: z
+    .array(z.tuple([num.min(-0.5001).max(0.5001), num.min(-0.5001).max(0.5001)]))
+    .min(3)
+    .max(2000)
+    .optional(),
+  fill: color,
+  stroke: color,
+  strokeWidth: num.min(0).max(500),
+  opacity: num.min(0).max(1),
+  pattern: z.enum(CUSTOM_PATTERNS),
+  text: z.string().max(200).optional(),
+  showName: z.boolean(),
+  x: mm,
+  y: mm,
+  w: size,
+  h: size,
+  rotation: num.min(-3600).max(3600),
+  libraryId: z.string().max(64).nullable().default(null),
+  info: partInfoSchema.optional(),
+});
+
 const roomSchema = z.object({
   id,
   floorId: id,
@@ -245,6 +336,7 @@ const roomSchema = z.object({
     showLabel: z.boolean(),
     showArea: z.boolean(),
   }),
+  info: partInfoSchema.optional(),
 });
 
 const openingSchema = z.object({
@@ -257,6 +349,7 @@ const openingSchema = z.object({
   width: size,
   hinge: z.enum(['start', 'end']),
   swing: z.enum(['in', 'out']),
+  info: partInfoSchema.optional(),
 });
 
 const furnitureSchema = z.object({
@@ -271,6 +364,7 @@ const furnitureSchema = z.object({
   height: size.default(700),
   rotation: num.min(-3600).max(3600),
   productId: z.string().max(128).nullable().default(null),
+  info: partInfoSchema.optional(),
 });
 
 const floorSchema = z.object({ id, name: text, level: num, height: size });
@@ -280,6 +374,7 @@ const contentShape = {
   rooms: z.array(roomSchema).max(2000),
   openings: z.array(openingSchema).max(5000),
   furniture: z.array(furnitureSchema).max(5000),
+  customParts: z.array(customPartSchema).max(2000).default([]),
 };
 
 const settingsSchema = z.object({
@@ -315,7 +410,7 @@ const planSchema = z.object({
 
 const v2Schema = z.object({
   format: z.literal(PROJECT_FORMAT),
-  version: z.literal(2),
+  version: z.union([z.literal(2), z.literal(3)]),
   projectId: id,
   projectName: text,
   settings: settingsSchema,
@@ -340,6 +435,7 @@ function sanitizeContent(c: PlanContent): PlanContent {
     rooms,
     openings: c.openings.filter((o) => roomIds.has(o.roomId)),
     furniture: c.furniture.filter((f) => floorIds.has(f.floorId)),
+    customParts: (c.customParts ?? []).filter((cp) => floorIds.has(cp.floorId)),
     activeFloorId: floorIds.has(c.activeFloorId) ? c.activeFloorId : c.floors[0].id,
   };
 }
@@ -370,6 +466,7 @@ export function parseProject(textData: string): ParseResult {
       rooms: d.rooms as Room[],
       openings: d.openings,
       furniture: d.furniture,
+      customParts: d.customParts,
       activeFloorId: d.settings.activeFloorId ?? d.floors[0].id,
     });
     const planId = uid('plan');
@@ -387,9 +484,12 @@ export function parseProject(textData: string): ParseResult {
     };
     return { ok: true, project: withContent(base, content) };
   }
+  if (typeof version === 'number' && version > PROJECT_VERSION) {
+    return { ok: false, error: '新しい版の Web間取りで作られたデータです。ページを再読み込みして最新の版でお試しください。' };
+  }
   const res = v2Schema.safeParse(raw);
   if (!res.success) {
-    if (version !== 2) return { ok: false, error: '対応していない形式のデータです。' };
+    if (version !== 2 && version !== 3) return { ok: false, error: '対応していない形式のデータです。' };
     return { ok: false, error: issueText(res.error) };
   }
   const d = res.data;
@@ -400,6 +500,7 @@ export function parseProject(textData: string): ParseResult {
       rooms: pl.rooms as Room[],
       openings: pl.openings,
       furniture: pl.furniture,
+      customParts: pl.customParts,
       activeFloorId: pl.activeFloorId,
     });
     return { id: pl.id, name: pl.name, createdAt: pl.createdAt, updatedAt: pl.updatedAt, content };
@@ -421,7 +522,7 @@ export function parseProject(textData: string): ParseResult {
 }
 
 /**
- * 保存用 JSON（形式 v2）を生成する。全案の中身を plans[] に正規化して出力する。
+ * 保存用 JSON（形式 v3）を生成する。全案の中身を plans[] に正規化して出力する。
  * derived（壁・接続）は部屋から算出される派生データで、外部ツール（3D化など）向け。読み込み時は無視される。
  */
 export function serializeProject(p: Project, pretty = true): string {
@@ -436,6 +537,7 @@ export function serializeProject(p: Project, pretty = true): string {
     rooms: content.rooms,
     openings: content.openings,
     furniture: content.furniture,
+    customParts: content.customParts,
     derived: content.floors.map((f) => {
       const walls = computeWalls(
         content.rooms.filter((r) => r.floorId === f.id),
@@ -491,6 +593,7 @@ export function deleteFloor(p: Project, floorId: string): Project {
     rooms: p.rooms.filter((r) => r.floorId !== floorId),
     openings: p.openings.filter((o) => o.floorId !== floorId),
     furniture: p.furniture.filter((f) => f.floorId !== floorId),
+    customParts: p.customParts.filter((c) => c.floorId !== floorId),
     settings: { ...p.settings, activeFloorId: active },
   };
 }

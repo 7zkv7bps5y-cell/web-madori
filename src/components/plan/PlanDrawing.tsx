@@ -3,6 +3,7 @@ import { openingDef, roomDef } from '../../model/catalog';
 import { computeWalls, EPS, openingGeom, type OpeningGeom } from '../../model/geometry';
 import type { Opening, Project, Room, WallSegment } from '../../model/types';
 import { wallKind, wallThicknessOf } from '../../model/collision';
+import { CustomPartLayer } from './CustomPartShape';
 import { RoomFixtures } from './Fixtures';
 import type { Vec } from '../../model/flowCheck';
 import { doorSwingObstacles, layoutRoomLabel, type LabelLine, type LabelMode } from './labelLayout';
@@ -327,6 +328,8 @@ export const PlanDrawing = memo(function PlanDrawing({
           <OpeningSymbol key={o.opening.id} {...o} color={o.opening.id === highlightOpeningId ? '#1f7a63' : LINE} />
         ))}
       </g>
+      {/* カスタムパーツ（参考情報の画像などは描かない） */}
+      <CustomPartLayer items={project.customParts.filter((c) => c.floorId === floorId)} prefix={idPrefix} />
       {overlay}
       {labels && rooms.map((r) => <RoomLabel key={r.id} room={r} project={project} mode={labelMode} obstacles={doorObstacles} />)}
     </g>

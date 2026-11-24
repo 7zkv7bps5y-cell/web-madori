@@ -14,4 +14,4 @@ trap cleanup EXIT
 PSQL=("$PG_BIN/psql" -h "$WORK" -p "$PORT" -U postgres -d postgres -q -v ON_ERROR_STOP=1)
 "${PSQL[@]}" -f supabase/tests/supabase_stub.sql
 for f in supabase/migrations/*.sql; do "${PSQL[@]}" -f "$f"; done
-"${PSQL[@]}" -f supabase/tests/cloud_storage_test.sql
+for t in supabase/tests/cloud_storage_test.sql supabase/tests/share_links_test.sql; do "${PSQL[@]}" -f "$t"; done

@@ -17,6 +17,24 @@ export interface CloudStatus {
   showAds: boolean;
 }
 
+/** 共有リンク（閲覧専用）。クラウドに保存した間取りごとに 1 つ */
+export interface ShareInfo {
+  floorplanId: string;
+  /** 64 文字のランダムな識別子（サーバーが生成） */
+  token: string;
+  createdAt: string;
+}
+
+/** 共有リンクで開いた間取り（最新の保存内容） */
+export interface SharedFloorplan {
+  name: string;
+  project: Project;
+  updatedAt: string;
+}
+
+export const SHARE_TOKEN_RE = /^[0-9a-f]{64}$/;
+export const SHARE_NOT_FOUND = 'この共有リンクは停止されたか、存在しません。共有した人に新しいリンクを確認してください。';
+
 export interface CloudUser {
   id: string;
   email: string | null;
@@ -63,6 +81,16 @@ export interface CloudBackend {
   /** 複製（新規保存と同じく件数を 1 つ使う） */
   duplicate(id: string): Promise<CloudItem>;
   remove(id: string): Promise<void>;
+
+  // ---- 共有リンク（閲覧専用）----
+  /** 自分が発行している共有リンクの一覧 */
+  listShares(): Promise<ShareInfo[]>;
+  /** 共有リンクを発行（すでにあれば新しい識別子で作り直し、古いリンクは無効になる） */
+  issueShare(floorplanId: string): Promise<ShareInfo>;
+  /** 共有を停止（リンクは無効になる） */
+  revokeShare(floorplanId: string): Promise<void>;
+  /** 共有リンクの間取りを読む（ログイン不要・閲覧のみ） */
+  getShared(token: string): Promise<SharedFloorplan>;
 }
 
 export const CONFLICT_MESSAGE =

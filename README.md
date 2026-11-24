@@ -96,6 +96,10 @@ Playwright で確認するときは `chromium.launch({ env: { ...process.env, LA
 | --- | --- |
 | プラン設定（唯一の定義: 無料 3 件・有料 30 件・広告・価格） | `src/billing/plans.ts` |
 | データベース（プラン・有料権限・保存した間取り・RLS・保存上限のトリガー） | `supabase/migrations/20261122000000_cloud_storage.sql` |
+| データベース（共有リンク: 閲覧専用・停止・再発行） | `supabase/migrations/20261124000000_share_links.sql` |
+| 共有画面・閲覧モード | `src/components/SharingDialog.tsx`、`src/components/ViewerPanel.tsx`、`src/App.tsx`（`ViewerBanner`） |
+| カスタムパーツ・マイパーツ | `src/model/customParts.ts`、`src/components/CustomPart*.tsx`、`src/components/plan/CustomPartShape.tsx` |
+| パーツ別の参考情報（画像・URL・メモ） | `src/components/PartInfo.tsx`、`src/utils/images.ts`、`src/model/project.ts`（検証） |
 | データベースのテスト（ローカル PostgreSQL） | `scripts/test-db.sh`、`supabase/tests/` |
 | クラウド保存の窓口（Supabase 版 / テスト専用の模擬版） | `src/cloud/` |
 | ログイン状態・保存一覧 | `src/store/account.ts`、`src/components/CloudDialog.tsx` |
@@ -119,19 +123,29 @@ Playwright で確認するときは `chromium.launch({ env: { ...process.env, LA
 - **家具**は部屋とは別配列（`furniture`）。中心のワールド座標（mm）・幅 `w`・奥行き `d`・高さ `height`・回転（度）で保持。
   ローカル座標の上側（-y）が背面、下側（+y）が正面。間取り作成モードで部屋を動かすと、その部屋の中の家具も一緒に動く。
 - **間取り案**（A案・B案…）: 1 プロジェクトに最大 10 案。編集中の案の中身はプロジェクト直下（`rooms` など）にあり、
-  他の案は `plans[].content` に保持する。保存ファイル（形式 v2）では全案が `plans[]` に正規化される。v1 のファイルも読み込める。
+  他の案は `plans[].content` に保持する。保存ファイル（形式 v3）では全案が `plans[]` に正規化される。v1・v2 のファイルも読み込める。
+- **カスタムパーツ**は家具とも部屋とも別の配列（`customParts`）。中心座標・`w`・`h`・回転・形（rect / circle / ellipse / polygon / freehand）・
+  見た目（色・枠線・透明度・模様・文字）。多角形・自由描画の頂点は外接矩形に対して -0.5〜0.5 に正規化して保持するので、拡大縮小しても形が崩れない。
+  マイパーツ（再利用ライブラリ）はブラウザの localStorage（`web-madori:custom-parts:v1`）に、1 件ずつ ID・形式バージョン付きで保存（将来のユーザー間共有に備える）。
+  置いたパーツは間取りデータ側にコピーされるため、ライブラリがない端末・共有先でも同じ表示になる。
+- **参考情報**（`info`）は部屋・ドア/窓・家具・カスタムパーツに任意で付く（タイトル・商品名・価格・説明・仕様・メモ・リンク 20 件・画像 20 件）。
+  図面（画面・PNG・PDF）には描かない。リンクは http/https、画像 URL は https のみ。端末の写真は長辺 1024px の JPEG（約 200KB 以下・EXIF なし）に変換して
+  データ URL で埋め込み、1 つの間取りで合計 1.5MB まで。読み込み時にも同じ規則で検証する。
+- **共有リンク**: `/editor/?share=（64 桁の乱数）`。トークンはデータベースが発行し、`get_shared_floorplan` だけが（ログインなしで）
+  名前・内容・更新日時を返す。表示はクラウドに保存した最新版。閲覧モードでは編集・自動保存をしない。
+  「自分のデータとして保存」で新しい `projectId` の複製を自分のクラウドに保存する。従来の URL 共有（`#p=`）もそのまま使える。
 
-## 保存形式（.floorplan / version 2）
+## 保存形式（.floorplan / version 3）
 
 ```jsonc
 {
-  "format": "web-madori", "version": 2,
+  "format": "web-madori", "version": 3,
   "projectId": "...", "projectName": "...",
   "settings": { "gridSize": 455, "areaUnit": "tatami", ... },
   "activePlanId": "plan_...",
   "plans": [
     { "id": "plan_...", "name": "A案", "activeFloorId": "...",
-      "floors": [...], "rooms": [...], "openings": [...], "furniture": [...],
+      "floors": [...], "rooms": [...], "openings": [...], "furniture": [...], "customParts": [...],
       "derived": [{ "floorId": "...", "walls": [...], "connections": [...] }] }
   ]
 }
@@ -146,7 +160,7 @@ Playwright で確認するときは `chromium.launch({ env: { ...process.env, LA
 | 生活動線チェック（ドア開閉範囲・扉/引き出し・通路幅・改善提案） | **実装済み**（`model/flowCheck.ts`）。家具の正面に必要な空きはカタログの `front`、通路幅の対象外は `noPassageCheck` で定義。判定は目安として表示し、配置は禁止しない |
 | 家具・壁の干渉 | **実装済み**（重なり・壁・部屋の外を警告。配置は禁止しない） |
 | 家具商品連携・アフィリエイト | `Furniture.productId`（現在は常に `null`）。商品データは許諾を得た外部データとして別管理し、ID で参照する想定 |
-| 間取りの共有・公開・複製 | 公開状態はサーバー側（例: Supabase）で `projectId` に紐づけて管理。複製は `cloneContent()`（ID を振り直す）を流用 |
+| 間取りの共有・公開・複製 | **実装済み**（閲覧専用の共有リンク・停止・再発行・「自分のデータとして保存」。`floorplan_shares` 表） |
 | 複数階 | **実装済み**（最大 4 階。階タブ、下の階の薄表示、全階を並べた画像・PDF 出力） |
 | PDF 出力 | **実装済み**（`utils/exportPdf.ts`。日本語フォントを埋め込まずに済むよう、ページは高解像度画像。縮尺 1/100・1/50 指定可） |
 | URL 共有 | **実装済み**（`utils/share.ts`。deflate 圧縮して URL の `#p=` に格納。サーバーへは送信されない） |

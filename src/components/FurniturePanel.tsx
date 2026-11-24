@@ -6,6 +6,7 @@ import type { Furniture, Project } from '../model/types';
 import { normalizeAngle, useStore } from '../store/store';
 import { useView } from '../store/view';
 import { NumberField, TextField, toUnit } from './fields';
+import { PartInfoSection } from './PartInfo';
 import { ProductSuggestions } from './ProductSuggestions';
 
 export function issueText(issue: FurnitureIssue, p: Project): string {
@@ -156,6 +157,7 @@ export function FurnitureProps({ item }: { item: Furniture }) {
         </div>
       )}
 
+      <PartInfoSection info={item.info} project={project} onChange={(i) => st.setPartInfo({ kind: 'furniture', id: item.id }, i)} />
       <ProductSuggestions item={item} />
 
       <div className="actions">

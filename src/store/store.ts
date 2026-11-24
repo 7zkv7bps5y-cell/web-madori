@@ -17,6 +17,7 @@ import {
   createFurniture,
   createOpening,
   createProject,
+  copyProject,
   createRoom,
   deleteFloor,
   deletePlan,
@@ -27,8 +28,10 @@ import {
   uid,
 } from '../model/project';
 import type {
+  CustomPart,
   EditorMode,
   Furniture,
+  PartInfo,
   Opening,
   OpeningType,
   Project,
@@ -39,7 +42,25 @@ import type {
   Side,
 } from '../model/types';
 
-export type Tool = { kind: 'select' } | { kind: 'placeOpening'; type: OpeningType };
+export type Tool =
+  | { kind: 'select' }
+  | { kind: 'placeOpening'; type: OpeningType }
+  /** カスタムパーツの多角形・自由描画 */
+  | { kind: 'drawShape'; shape: 'polygon' | 'freehand' };
+
+/** 共有リンクで開いた間取り（閲覧のみ） */
+export interface ViewerState {
+  name: string;
+  /** 共有リンクの識別子 */
+  token: string;
+  updatedAt?: string;
+}
+
+interface Stash {
+  project: Project;
+  past: Project[];
+  future: Project[];
+}
 
 export interface AddDialogState {
   /** null の場合は基準なし（最初の部屋） */
@@ -66,6 +87,14 @@ interface State {
   /** ドラッグ中の一時状態の基準 */
   dragBase: Project | null;
   mode: EditorMode;
+  /** 閲覧専用モード（共有リンク）。この間は編集を受け付けない */
+  viewer: ViewerState | null;
+  /** 閲覧中、自分の間取りと履歴を退避しておく */
+  stash: Stash | null;
+  enterViewer: (project: Project, meta: ViewerState) => void;
+  exitViewer: () => void;
+  /** 閲覧中の間取りを、このブラウザの自分の間取りとしてコピーする（元に戻すで前の間取りに戻せる） */
+  copyViewerToLocal: (copy?: Project) => void;
 
   // 基本
   commit: (fn: (p: Project) => Project) => void;
@@ -105,6 +134,15 @@ interface State {
 
   // 家具
   addFurniture: (type: string, at: { x: number; y: number }) => void;
+
+  // カスタムパーツ
+  addCustomPart: (part: CustomPart) => void;
+  updateCustomPart: (id: string, patch: Partial<Omit<CustomPart, 'id'>>) => void;
+  deleteCustomPart: (id: string) => void;
+  duplicateCustomPart: (id: string) => void;
+
+  /** パーツの参考情報（画像・URL・メモ）。undefined で削除 */
+  setPartInfo: (target: Selection, info: PartInfo | undefined) => void;
   updateFurniture: (id: string, patch: Partial<Omit<Furniture, 'id'>>) => void;
   rotateFurniture: (id: string, delta: number) => void;
   /** 生活動線チェックの改善提案を適用 */
@@ -155,8 +193,36 @@ export const useStore = create<State>((set, get) => ({
   toast: null,
   dragBase: null,
   mode: 'plan',
+  viewer: null,
+  stash: null,
+
+  enterViewer: (project, meta) => {
+    const { viewer, stash } = get();
+    const keep = viewer && stash ? stash : { project: get().project, past: get().past, future: get().future };
+    set({ stash: keep, viewer: meta, project, past: [], future: [], selection: null, tool: { kind: 'select' }, mode: 'plan', dragBase: null });
+  },
+  exitViewer: () => {
+    const { stash } = get();
+    if (!stash) return set({ viewer: null });
+    set({ ...stash, stash: null, viewer: null, selection: null, tool: { kind: 'select' } });
+  },
+  copyViewerToLocal: (given) => {
+    const { stash, project } = get();
+    if (!get().viewer) return;
+    const copy = given ?? copyProject(project, `${project.projectName}のコピー`);
+    set({
+      project: copy,
+      past: stash ? [...stash.past, stash.project].slice(-HISTORY_LIMIT) : [],
+      future: [],
+      stash: null,
+      viewer: null,
+      selection: null,
+    });
+  },
 
   commit: (fn) => {
+    // 閲覧専用モードでは変更しない（共有リンクの間取りは編集できない）
+    if (get().viewer) return;
     const { project, past } = get();
     const next = fn(project);
     if (next === project) return;
@@ -174,8 +240,11 @@ export const useStore = create<State>((set, get) => ({
     const next = future[0];
     set({ project: next, past: [...past, project], future: future.slice(1), selection: validSelection(next, get().selection) });
   },
-  beginDrag: () => set({ dragBase: get().project }),
+  beginDrag: () => {
+    if (!get().viewer) set({ dragBase: get().project });
+  },
   dragUpdate: (fn) => {
+    if (get().viewer) return;
     const next = fn(get().project);
     if (next !== get().project) set({ project: next });
   },
@@ -188,14 +257,17 @@ export const useStore = create<State>((set, get) => ({
       set({ dragBase: null });
     }
   },
-  loadProject: (p, undoable = true) =>
+  loadProject: (p, undoable = true) => {
+    // 閲覧中に別の間取りを開く場合は、先に自分の間取りへ戻してから読み込む
+    if (get().viewer) get().exitViewer();
     set({
       project: p,
       past: undoable ? [...get().past, get().project].slice(-HISTORY_LIMIT) : [],
       future: [],
       selection: null,
       tool: { kind: 'select' },
-    }),
+    });
+  },
   newProject: () => get().loadProject(createProject(), true),
   setProjectName: (name) => get().commit((p) => (p.projectName === name ? p : { ...p, projectName: name })),
   setSettings: (patch) => get().commit((p) => ({ ...p, settings: { ...p.settings, ...patch } })),
@@ -353,6 +425,45 @@ export const useStore = create<State>((set, get) => ({
     set({ selection: null });
   },
 
+  addCustomPart: (part) => {
+    get().commit((p) => ({ ...p, customParts: [...p.customParts, part] }));
+    set({ selection: { kind: 'custom', id: part.id } });
+  },
+  updateCustomPart: (id, patch) =>
+    get().commit((p) => ({ ...p, customParts: p.customParts.map((c) => (c.id === id ? { ...c, ...patch } : c)) })),
+  deleteCustomPart: (id) => {
+    get().commit((p) => ({ ...p, customParts: p.customParts.filter((c) => c.id !== id) }));
+    set({ selection: null });
+  },
+  duplicateCustomPart: (id) => {
+    const c = get().project.customParts.find((x) => x.id === id);
+    if (!c) return;
+    const copy: CustomPart = { ...structuredClone(c), id: uid('cp'), x: c.x + 300, y: c.y + 300 };
+    get().commit((p) => ({ ...p, customParts: [...p.customParts, copy] }));
+    set({ selection: { kind: 'custom', id: copy.id } });
+  },
+  setPartInfo: (target, info) =>
+    get().commit((p) => {
+      const apply = <T extends { id: string; info?: PartInfo }>(list: T[]): T[] =>
+        list.map((x) => {
+          if (x.id !== target.id) return x;
+          const next = { ...x };
+          if (info) next.info = info;
+          else delete next.info;
+          return next;
+        });
+      switch (target.kind) {
+        case 'room':
+          return { ...p, rooms: apply(p.rooms) };
+        case 'opening':
+          return { ...p, openings: apply(p.openings) };
+        case 'furniture':
+          return { ...p, furniture: apply(p.furniture) };
+        case 'custom':
+          return { ...p, customParts: apply(p.customParts) };
+      }
+    }),
+
   addFurniture: (type, at) => {
     const f = createFurniture(type, at, get().project.settings.activeFloorId);
     get().commit((p) => ({ ...p, furniture: [...p.furniture, f] }));
@@ -409,7 +520,9 @@ export const useStore = create<State>((set, get) => ({
     return true;
   },
   switchPlan: (planId) => {
-    get().commit((p) => switchPlan(p, planId));
+    // 閲覧モードでは履歴を残さず表示だけ切り替える（データは編集しない）
+    if (get().viewer) set({ project: switchPlan(get().project, planId) });
+    else get().commit((p) => switchPlan(p, planId));
     set({ selection: null, tool: { kind: 'select' } });
   },
   renamePlan: (planId, name) => get().commit((p) => renamePlan(p, planId, name.trim() || p.plans.find((e) => e.id === planId)?.name || '案')),
@@ -423,12 +536,17 @@ export const useStore = create<State>((set, get) => ({
     if (!s) return;
     if (s.kind === 'room') get().deleteRoom(s.id);
     else if (s.kind === 'opening') get().deleteOpening(s.id);
+    else if (s.kind === 'custom') get().deleteCustomPart(s.id);
     else get().deleteFurniture(s.id);
   },
   rotateSelection: () => {
     const s = get().selection;
     if (s?.kind === 'room') get().rotateRoom(s.id);
     else if (s?.kind === 'furniture') get().rotateFurniture(s.id, 90);
+    else if (s?.kind === 'custom') {
+      const c = get().project.customParts.find((x) => x.id === s.id);
+      if (c) get().updateCustomPart(c.id, { rotation: normalizeAngle(c.rotation + 90) });
+    }
   },
 
   duplicateSelection: () => {
@@ -436,6 +554,7 @@ export const useStore = create<State>((set, get) => ({
     if (!s) return;
     if (s.kind === 'room') get().duplicateRoom(s.id);
     else if (s.kind === 'furniture') get().duplicateFurniture(s.id);
+    else if (s.kind === 'custom') get().duplicateCustomPart(s.id);
     else if (s.kind === 'opening') {
       const o = get().project.openings.find((x) => x.id === s.id);
       const room = o && get().project.rooms.find((r) => r.id === o.roomId);
@@ -451,5 +570,6 @@ function validSelection(p: Project, s: Selection | null): Selection | null {
   if (!s) return null;
   if (s.kind === 'room') return p.rooms.some((r) => r.id === s.id) ? s : null;
   if (s.kind === 'opening') return p.openings.some((o) => o.id === s.id) ? s : null;
+  if (s.kind === 'custom') return p.customParts.some((c) => c.id === s.id) ? s : null;
   return p.furniture.some((f) => f.id === s.id) ? s : null;
 }

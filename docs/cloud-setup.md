@@ -10,13 +10,15 @@
    - Database Password は自動生成でよい。安全な場所に保管し、リポジトリ・チャットには書かない
 2. 左のメニュー **SQL Editor** →「New query」に `supabase/migrations/20261122000000_cloud_storage.sql` の中身を**すべて**貼り付けて「Run」
    - 作られるもの: `plans`（プラン）・`entitlements`（有料権限）・`floorplans`（保存した間取り）・関数・トリガー・RLS
+   - 続けて、もう 1 つの「New query」で `supabase/migrations/20261124000000_share_links.sql` を同じように実行する（**ファイル名の順番どおり**）
+     - 作られるもの: `floorplan_shares`（共有リンク）・`issue_floorplan_share`（発行）・`get_shared_floorplan`（トークンで閲覧）・RLS
    - Supabase CLI を使う場合: `supabase link --project-ref （プロジェクトID）` → `supabase db push`
 3. 同じ SQL Editor で、次の確認用 SQL を実行し、結果が期待どおりか確認する
 
 ```sql
 -- (a) RLS が 3 つの表すべてで有効（relrowsecurity がすべて true）
 select relname, relrowsecurity from pg_class
-where relnamespace = 'public'::regnamespace and relname in ('plans', 'entitlements', 'floorplans');
+where relnamespace = 'public'::regnamespace and relname in ('plans', 'entitlements', 'floorplans', 'floorplan_shares');
 
 -- (b) プランの値（free: 3 件・広告あり / premium: 30 件・広告なし・500 円）
 select * from public.plans order by sort_order;
