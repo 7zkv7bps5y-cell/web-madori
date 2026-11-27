@@ -1,6 +1,6 @@
 import { memo, useMemo, type ReactElement, type ReactNode } from 'react';
 import { openingDef, roomDef } from '../../model/catalog';
-import { computeWalls, EPS, openingGeom, type OpeningGeom } from '../../model/geometry';
+import { computeWalls, drawOrder, embeddedStairsOf, EPS, isEmbeddedStairs, openingGeom, type OpeningGeom } from '../../model/geometry';
 import type { Opening, Project, Room, WallSegment } from '../../model/types';
 import { wallKind, wallThicknessOf } from '../../model/collision';
 import { CustomPartLayer } from './CustomPartShape';
@@ -49,7 +49,7 @@ function FloorPatternDefs({ room, prefix }: { room: Room; prefix: string }) {
   }
 }
 
-function RoomBody({ room, showFixtures, prefix }: { room: Room; showFixtures: boolean; prefix: string }) {
+function RoomBody({ room, showFixtures, prefix, embedded }: { room: Room; showFixtures: boolean; prefix: string; embedded: boolean }) {
   const fill = room.style.fill ?? roomDef(room.type).fill;
   const floor = resolveFloor(room);
   return (
@@ -63,6 +63,8 @@ function RoomBody({ room, showFixtures, prefix }: { room: Room; showFixtures: bo
           <RoomFixtures room={room} />
         </g>
       )}
+      {/* 部屋の中に置いた階段（壁なし）: 範囲が分かるよう外形線を描く。判定範囲（部屋の矩形）と同じ */}
+      {embedded && <rect x={room.x} y={room.y} width={room.w} height={room.h} fill="none" stroke="#6b6458" strokeWidth={24} />}
     </g>
   );
 }
@@ -85,10 +87,17 @@ export function RoomLabel({
   /** 避ける場所（ドアの開閉範囲） */
   obstacles?: Vec[][];
 }) {
+  // 部屋の中に置いた階段の上には部屋名を重ねない
+  const inner = embeddedStairsOf(room, project.rooms).map((r) => [
+    { x: r.x, y: r.y },
+    { x: r.x + r.w, y: r.y },
+    { x: r.x + r.w, y: r.y + r.h },
+    { x: r.x, y: r.y + r.h },
+  ]);
   const layout = layoutRoomLabel(room, {
     mode,
     zoom,
-    obstacles,
+    obstacles: inner.length ? [...(obstacles ?? []), ...inner] : obstacles,
     areaUnit: project.settings.areaUnit,
     tatamiArea: project.settings.tatamiArea,
   });
@@ -319,8 +328,8 @@ export const PlanDrawing = memo(function PlanDrawing({
           </g>
         ))}
       </defs>
-      {rooms.map((r) => (
-        <RoomBody key={r.id} room={r} showFixtures={showFixtures} prefix={idPrefix} />
+      {drawOrder(rooms).map((r) => (
+        <RoomBody key={r.id} room={r} showFixtures={showFixtures} prefix={idPrefix} embedded={isEmbeddedStairs(r, rooms)} />
       ))}
       <Walls walls={walls} openings={openings} project={project} />
       <g pointerEvents="none">

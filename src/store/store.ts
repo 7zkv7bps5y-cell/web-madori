@@ -3,11 +3,14 @@ import { applyFlowFix, type FlowFix } from '../model/flowCheck';
 import { openingDef, roomDef } from '../model/catalog';
 import {
   clampOpeningToRoom,
+  embeddedStairsOf,
   findAdjacentPlacement,
   findFreeSpotNear,
-  overlapsAny,
+  isEmbeddedStairs,
   rehostOpening,
+  roomConflicts,
   rotateOpeningCW,
+  wallRooms,
   type WallHit,
 } from '../model/geometry';
 import {
@@ -172,6 +175,25 @@ export const normalizeAngle = (a: number) => ((Math.round(a) % 360) + 360) % 360
 
 const touch = (p: Project): Project => ({ ...p, updatedAt: new Date().toISOString() });
 
+/**
+ * 部屋の中に置いた階段（リビング階段など）の縁には壁がないため、そこに付いていたドア・窓を外す。
+ * 編集の確定時に行う（元に戻すで戻せる）。
+ */
+export function pruneStairsOpenings(p: Project): Project {
+  const drop = new Set(p.rooms.filter((r) => r.type === 'stairs' && isEmbeddedStairs(r, p.rooms)).map((r) => r.id));
+  if (drop.size === 0 || !p.openings.some((o) => drop.has(o.roomId))) return p;
+  return { ...p, openings: p.openings.filter((o) => !drop.has(o.roomId)) };
+}
+
+/** 矩形を (cx, cy) を中心に時計回りに 90° 回し、(dx, dy) だけ動かす */
+function rotateRectCW(r: Rect, cx: number, cy: number, dx: number, dy: number): Rect {
+  const sx = r.x + r.w / 2;
+  const sy = r.y + r.h / 2;
+  const nx = cx - (sy - cy) + dx;
+  const ny = cy + (sx - cx) + dy;
+  return { x: nx - r.h / 2, y: ny - r.w / 2, w: r.h, h: r.w };
+}
+
 export function activeRooms(p: Project): Room[] {
   return p.rooms.filter((r) => r.floorId === p.settings.activeFloorId);
 }
@@ -226,7 +248,7 @@ export const useStore = create<State>((set, get) => ({
     const { project, past } = get();
     const next = fn(project);
     if (next === project) return;
-    set({ project: touch(next), past: [...past, project].slice(-HISTORY_LIMIT), future: [] });
+    set({ project: touch(pruneStairsOpenings(next)), past: [...past, project].slice(-HISTORY_LIMIT), future: [] });
   },
   undo: () => {
     const { past, project, future } = get();
@@ -252,7 +274,7 @@ export const useStore = create<State>((set, get) => ({
     const { dragBase, project, past } = get();
     if (dragBase && dragBase !== project) {
       // dragBase の解除と確定を同時に行う（自動保存が確定後の状態を確実に拾うため）
-      set({ past: [...past, dragBase].slice(-HISTORY_LIMIT), future: [], project: touch(project), dragBase: null });
+      set({ past: [...past, dragBase].slice(-HISTORY_LIMIT), future: [], project: touch(pruneStairsOpenings(project)), dragBase: null });
     } else {
       set({ dragBase: null });
     }
@@ -281,8 +303,13 @@ export const useStore = create<State>((set, get) => ({
 
   addRoomAt: (type, rect) => {
     const { project } = get();
-    if (overlapsAny(rect, activeRooms(project))) {
-      get().notify('他の部屋と重なるため追加できません。', 'error');
+    if (roomConflicts(rect, type, activeRooms(project))) {
+      get().notify(
+        type === 'stairs'
+          ? '他の部屋と重なるため追加できません（階段は、1 つの部屋の中に収まる位置か、部屋の外なら置けます）。'
+          : '他の部屋と重なるため追加できません。',
+        'error',
+      );
       return false;
     }
     const room = createRoom(type, rect, project.settings.activeFloorId);
@@ -305,7 +332,8 @@ export const useStore = create<State>((set, get) => ({
 
   setRoomRect: (id, rect) => {
     const { project } = get();
-    if (overlapsAny(rect, activeRooms(project), [id])) return false;
+    const room = project.rooms.find((r) => r.id === id);
+    if (!room || roomConflicts(rect, room.type, activeRooms(project), [id])) return false;
     get().commit((p) => ({
       ...p,
       rooms: p.rooms.map((r) => (r.id === id ? { ...r, ...rect } : r)),
@@ -332,25 +360,42 @@ export const useStore = create<State>((set, get) => ({
     const { project } = get();
     const room = project.rooms.find((r) => r.id === id);
     if (!room) return false;
+    const rooms = activeRooms(project);
     const grid = project.settings.gridSize;
     const cx = room.x + room.w / 2;
     const cy = room.y + room.h / 2;
-    const rect: Rect = {
-      x: Math.round((cx - room.h / 2) / grid) * grid,
-      y: Math.round((cy - room.w / 2) / grid) * grid,
-      w: room.h,
-      h: room.w,
-    };
-    if (overlapsAny(rect, activeRooms(project), [id])) {
+    const w = room.h;
+    const h = room.w;
+    // 中心で回すのが基本。隣の部屋と重なる場合は、四隅のどれかを固定して回す（壁際の細長い階段・収納など）
+    const candidates: Rect[] = [
+      { x: Math.round((cx - w / 2) / grid) * grid, y: Math.round((cy - h / 2) / grid) * grid, w, h },
+      { x: room.x, y: room.y, w, h },
+      { x: room.x + room.w - w, y: room.y, w, h },
+      { x: room.x, y: room.y + room.h - h, w, h },
+      { x: room.x + room.w - w, y: room.y + room.h - h, w, h },
+    ];
+    // 部屋の中に置いた階段は、部屋と一緒に回す
+    const inner = embeddedStairsOf(room, rooms);
+    const exclude = [id, ...inner.map((r) => r.id)];
+    const rect = candidates.find((c) => !roomConflicts(c, room.type, rooms, exclude));
+    if (!rect) {
       get().notify('回転すると他の部屋と重なるため回転できません。', 'error');
       return false;
     }
+    const dx = rect.x + rect.w / 2 - cx;
+    const dy = rect.y + rect.h / 2 - cy;
+    const moved = new Map(inner.map((r) => [r.id, rotateRectCW(r, cx, cy, dx, dy)]));
+    const turn = (r: Room) => (((r.rotation + 90) % 360) as Room['rotation']);
     get().commit((p) => ({
       ...p,
       rooms: p.rooms.map((r) =>
-        r.id === id ? { ...r, ...rect, rotation: (((r.rotation + 90) % 360) as Room['rotation']) } : r,
+        r.id === id ? { ...r, ...rect, rotation: turn(r) } : moved.has(r.id) ? { ...r, ...moved.get(r.id)!, rotation: turn(r) } : r,
       ),
-      openings: p.openings.map((o) => (o.roomId === id ? rotateOpeningCW(o, room) : o)),
+      openings: p.openings.map((o) => {
+        if (o.roomId === id) return rotateOpeningCW(o, room);
+        const s = inner.find((r) => r.id === o.roomId);
+        return s ? rotateOpeningCW(o, s) : o;
+      }),
     }));
     return true;
   },
@@ -384,7 +429,7 @@ export const useStore = create<State>((set, get) => ({
         if (o.roomId !== id) openings.push(o);
         else {
           // 共有壁上のドア・窓は隣の部屋へ引き継ぐ
-          const moved = rehostOpening(o, room, restOnFloor);
+          const moved = rehostOpening(o, room, wallRooms(restOnFloor));
           if (moved) openings.push(moved);
         }
       }

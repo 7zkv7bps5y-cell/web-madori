@@ -125,7 +125,9 @@ export function solidWallRects(p: Project, rooms: Room[], walls: WallSegment[]):
 export type FurnitureIssue =
   | { kind: 'overlap'; otherId: string }
   | { kind: 'wall' }
-  | { kind: 'outside' };
+  | { kind: 'outside' }
+  /** 階段の上に置かれている（階段の中は通り道なので家具は置けない） */
+  | { kind: 'stairs'; roomId: string };
 
 /** 家具ごとの干渉（重なり・壁・部屋の外）を求める。配置は禁止せず警告表示に使う */
 export function checkFurniture(p: Project): Map<string, FurnitureIssue[]> {
@@ -134,6 +136,8 @@ export function checkFurniture(p: Project): Map<string, FurnitureIssue[]> {
   const items = p.furniture.filter((f) => f.floorId === floorId);
   const walls = solidWallRects(p, rooms, computeWalls(rooms, floorId)).map(rectCorners);
   const polys = items.map((f) => furnitureCorners(f, 1));
+  // 階段の範囲（描画と同じ部屋の矩形）。部屋の中に置いた階段も、独立した階段室も同じ扱い
+  const stairs = rooms.filter((r) => r.type === 'stairs').map((r) => ({ id: r.id, poly: rectCorners(r) }));
   const result = new Map<string, FurnitureIssue[]>();
   items.forEach((f, i) => {
     const issues: FurnitureIssue[] = [];
@@ -142,6 +146,10 @@ export function checkFurniture(p: Project): Map<string, FurnitureIssue[]> {
       issues.push({ kind: 'outside' });
     }
     if (!mounted && walls.some((w) => polygonsIntersect(polys[i], w))) issues.push({ kind: 'wall' });
+    if (!mounted) {
+      const s = stairs.find((x) => polygonsIntersect(polys[i], x.poly));
+      if (s) issues.push({ kind: 'stairs', roomId: s.id });
+    }
     if (!mounted) {
       items.forEach((g, j) => {
         if (i === j || furnitureDef(g.type).wallMounted) return;

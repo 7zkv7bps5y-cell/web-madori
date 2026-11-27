@@ -1,5 +1,6 @@
 import { isOutdoor } from './catalog';
 import { checkFurniture } from './collision';
+import { isEmbeddedStairs } from './geometry';
 import { checkFlow } from './flowCheck';
 import { sortedFloors } from './project';
 import type { Project, Room, RoomType } from './types';
@@ -20,9 +21,9 @@ export function layoutLabel(types: RoomType[]): string {
   return `${n}${suffix}`;
 }
 
-/** 床面積（バルコニーなど屋外は含めない。壁芯） */
+/** 床面積（バルコニーなど屋外は含めない。壁芯。部屋の中に置いた階段は、その部屋の面積に含まれるので二重に数えない） */
 export function floorArea(rooms: Room[]): number {
-  return rooms.filter((r) => !isOutdoor(r.type)).reduce((s, r) => s + areaM2(r.w, r.h), 0);
+  return rooms.filter((r) => !isOutdoor(r.type) && !isEmbeddedStairs(r, rooms)).reduce((s, r) => s + areaM2(r.w, r.h), 0);
 }
 
 export interface PlanStats {

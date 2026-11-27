@@ -17,6 +17,8 @@ export function issueText(issue: FurnitureIssue, p: Project): string {
       return '壁と干渉しています';
     case 'outside':
       return '部屋の外に置かれています';
+    case 'stairs':
+      return '階段と重なっています';
   }
 }
 

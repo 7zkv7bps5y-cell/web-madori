@@ -7,7 +7,9 @@ import {
   findFreeSpot,
   nearestWall,
   openingGeom,
-  overlapsAny,
+  drawOrder,
+  embeddedStairsOf,
+  roomConflicts,
   resizeRect,
   snapMove,
   type ResizeHandle,
@@ -42,6 +44,8 @@ type Gesture =
       orig: Rect;
       /** 部屋と一緒に動かす家具（部屋の中にある家具）の元の位置 */
       carry: { id: string; x: number; y: number }[];
+      /** 部屋の中に置いた階段（部屋と一緒に動かす）の元の位置 */
+      stairs: { id: string; rect: Rect }[];
       moved: boolean;
       began: boolean;
     }
@@ -448,6 +452,7 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
           carry: st.project.furniture
             .filter((f) => f.floorId === room.floorId && f.x > room.x && f.x < room.x + room.w && f.y > room.y && f.y < room.y + room.h)
             .map((f) => ({ id: f.id, x: f.x, y: f.y })),
+          stairs: embeddedStairsOf(room, activeRooms(st.project)).map((r) => ({ id: r.id, rect: { x: r.x, y: r.y, w: r.w, h: r.h } })),
           moved: false,
           began: false,
         };
@@ -521,19 +526,22 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
           st.beginDrag();
           g.began = true;
         }
-        const others = activeRooms(st.project).filter((r) => r.id !== g.id);
+        const inner = new Set(g.stairs.map((x) => x.id));
+        const others = activeRooms(st.project).filter((r) => r.id !== g.id && !inner.has(r.id));
+        const self = st.project.rooms.find((r) => r.id === g.id);
         const moved = snapMove(
           { ...g.orig, x: g.orig.x + dx / v.zoom, y: g.orig.y + dy / v.zoom },
           others,
           st.project.settings.gridSize,
           12 / v.zoom,
         );
-        if (!overlapsAny(moved, others)) {
+        if (self && !roomConflicts(moved, self.type, others)) {
           const ddx = moved.x - g.orig.x;
           const ddy = moved.y - g.orig.y;
           const carry = new Map(g.carry.map((c) => [c.id, c]));
           st.dragUpdate((p) => {
-            const next = withRoomRect(p, g.id, moved);
+            let next = withRoomRect(p, g.id, moved);
+            for (const x of g.stairs) next = withRoomRect(next, x.id, { ...x.rect, x: x.rect.x + ddx, y: x.rect.y + ddy });
             if (carry.size === 0) return next;
             return {
               ...next,
@@ -616,7 +624,8 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
           12 / v.zoom,
           455,
         );
-        if (!overlapsAny(rect, others)) st.dragUpdate((p) => withRoomRect(p, g.id, rect));
+        const self = st.project.rooms.find((r) => r.id === g.id);
+        if (self && !roomConflicts(rect, self.type, others)) st.dragUpdate((p) => withRoomRect(p, g.id, rect));
         return;
       }
       case 'opening': {
@@ -712,7 +721,8 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
     const p = toWorld(e.clientX, e.clientY);
     const others = activeRooms(st.project);
     const start = snapMove({ x: p.x - def.w / 2, y: p.y - def.h / 2, w: def.w, h: def.h }, others, grid, 20 / zoom);
-    const rect = findFreeSpot(start, others, grid, 6);
+    // 階段は、1 つの部屋の中に収まる位置ならそのまま置ける（リビング階段など）
+    const rect = !roomConflicts(start, type, others) ? start : findFreeSpot(start, others, grid, 6);
     if (rect) st.addRoomAt(type, rect);
     else st.notify('他の部屋と重なるため、ここには置けません。', 'error');
   };
@@ -830,7 +840,7 @@ export function Canvas({ touchUi }: { touchUi: boolean }) {
 
         {/* 当たり判定レイヤー */}
         <g className={tool.kind === 'placeOpening' || !planMode ? 'no-hit' : ''}>
-          {rooms.map((r) => (
+          {drawOrder(rooms).map((r) => (
             <rect
               key={r.id}
               data-room-id={r.id}

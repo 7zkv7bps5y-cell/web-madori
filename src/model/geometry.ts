@@ -1,4 +1,5 @@
-import type { Connection, Opening, Rect, Room, Side, WallSegment } from './types';
+import { isOutdoor } from './catalog';
+import type { Connection, Opening, Rect, Room, RoomType, Side, WallSegment } from './types';
 
 export const EPS = 0.5;
 
@@ -15,6 +16,67 @@ export function rectsOverlap(a: Rect, b: Rect): boolean {
 
 export function overlapsAny(rect: Rect, rooms: Room[], exclude: string[] = []): boolean {
   return rooms.some((o) => !exclude.includes(o.id) && rectsOverlap(rect, o));
+}
+
+// ---------------------------------------------------------------------------
+// 階段（stairs）の扱い
+// 階段は部屋の一種として保持するが、住宅では LDK などの中に置く「リビング階段（オープン階段）」が一般的。
+// そのため「1 つの屋内の部屋の中に完全に収まっている階段」は、その部屋の中にある階段として重なりを認める。
+// 部屋の境界（壁）をまたぐ・一部だけ重なる・屋外（バルコニー）や別の階段と重なる配置は、従来どおり置けない。
+// ---------------------------------------------------------------------------
+
+/** inner が outer の内側（辺が接するのは可）にあるか */
+export function rectContains(outer: Rect, inner: Rect): boolean {
+  return (
+    inner.x >= outer.x - EPS &&
+    inner.y >= outer.y - EPS &&
+    inner.x + inner.w <= outer.x + outer.w + EPS &&
+    inner.y + inner.h <= outer.y + outer.h + EPS
+  );
+}
+
+/** 階段を中に置ける部屋か（屋内・階段以外） */
+const canHostStairs = (type: RoomType) => type !== 'stairs' && !isOutdoor(type);
+
+/** 部屋の中に置いた階段なら、その部屋（同じ階の rooms から探す） */
+export function stairsHost(stairs: Room, rooms: Room[]): Room | undefined {
+  if (stairs.type !== 'stairs') return undefined;
+  return rooms.find(
+    (o) => o.id !== stairs.id && o.floorId === stairs.floorId && canHostStairs(o.type) && rectsOverlap(o, stairs) && rectContains(o, stairs),
+  );
+}
+
+/** 部屋の中にある階段（壁を作らない） */
+export function isEmbeddedStairs(room: Room, rooms: Room[]): boolean {
+  return !!stairsHost(room, rooms);
+}
+
+/** host の中に置かれている階段 */
+export function embeddedStairsOf(host: Room, rooms: Room[]): Room[] {
+  return rooms.filter((r) => stairsHost(r, rooms)?.id === host.id);
+}
+
+/**
+ * 部屋（種類 type・位置 rect）を置くと他の部屋と干渉するか。
+ * 重なりは原則不可。ただし「階段が 1 つの屋内の部屋に完全に収まる」重なりだけは可。
+ */
+export function roomConflicts(rect: Rect, type: RoomType, rooms: Room[], exclude: string[] = []): boolean {
+  return rooms.some((o) => {
+    if (exclude.includes(o.id) || !rectsOverlap(rect, o)) return false;
+    if (type === 'stairs' && canHostStairs(o.type) && rectContains(o, rect)) return false;
+    if (o.type === 'stairs' && canHostStairs(type) && rectContains(rect, o)) return false;
+    return true;
+  });
+}
+
+/** 描画・当たり判定の順（階段を最後＝最前面にして、部屋の中に置いた階段が隠れず選べるようにする） */
+export function drawOrder<T extends { type: RoomType }>(rooms: T[]): T[] {
+  return [...rooms.filter((r) => r.type !== 'stairs'), ...rooms.filter((r) => r.type === 'stairs')];
+}
+
+/** 壁を作る部屋（部屋の中に置いた階段は、その部屋の一部として壁を作らない） */
+export function wallRooms(rooms: Room[]): Room[] {
+  return rooms.filter((r) => !isEmbeddedStairs(r, rooms));
 }
 
 export function boundsOf(rects: Rect[]): Rect | null {
@@ -64,7 +126,8 @@ export function inwardSign(side: Side): 1 | -1 {
  * 全部屋の辺から壁を算出する。
  * 同一直線上で重なる辺は 1 本の壁として統合されるため、共有壁が二重に描画されない。
  */
-export function computeWalls(rooms: Room[], floorId: string): WallSegment[] {
+export function computeWalls(allRooms: Room[], floorId: string): WallSegment[] {
+  const rooms = wallRooms(allRooms);
   const result: WallSegment[] = [];
   for (const orientation of ['h', 'v'] as const) {
     const lines = new Map<number, { start: number; end: number; roomId: string; side: Side }[]>();
@@ -229,7 +292,8 @@ export function nearestWall(
   snapStep = 0,
 ): WallHit | null {
   let best: WallHit | null = null;
-  for (const room of rooms) {
+  // 部屋の中に置いた階段の縁には壁がないため、ドア・窓は付けない
+  for (const room of wallRooms(rooms)) {
     for (const side of SIDES) {
       const e = edgeOf(room, side);
       const along = e.orientation === 'h' ? p.x : p.y;
